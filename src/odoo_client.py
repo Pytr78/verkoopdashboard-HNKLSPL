@@ -1,13 +1,20 @@
 import xmlrpc.client
 import os
 from dotenv import load_dotenv
+import streamlit as st
 
 load_dotenv()
 
-ODOO_URL = os.getenv("ODOO_URL")
-ODOO_DB = os.getenv("ODOO_DB")
-ODOO_USERNAME = os.getenv("ODOO_USERNAME")
-ODOO_PASSWORD = os.getenv("ODOO_PASSWORD")
+def _get_secret(key: str) -> str:
+    try:
+        return st.secrets["odoo"][key]
+    except (KeyError, AttributeError):
+        return os.getenv(key)
+
+ODOO_URL = _get_secret("ODOO_URL")
+ODOO_DB = _get_secret("ODOO_DB")
+ODOO_USERNAME = _get_secret("ODOO_USERNAME")
+ODOO_PASSWORD = _get_secret("ODOO_PASSWORD")
 
 
 def get_uid():
