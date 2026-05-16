@@ -11,6 +11,8 @@ from src.charts import lijndiagram, staafdiagram
 from src.management_summary import bereken_samenvatting
 from src.rfm import bereken_rfm, SEGMENTEN
 from src.doelstellingen import laad_doelstellingen, sla_doelstellingen_op
+from src.betalingsanalyse import bereken_betaaldagen, CATEGORIEEN
+from src.odoo_client import fetch_betaalde_facturen
 
 st.set_page_config(
     page_title="Verkoopdashboard HNKLSPL",
@@ -19,6 +21,10 @@ st.set_page_config(
 )
 
 st.title("Verkoopdashboard")
+
+@st.cache_data(ttl=3600)
+def laad_betalingen():
+    return fetch_betaalde_facturen()
 
 @st.cache_data(ttl=3600)
 def laad_data():
@@ -255,6 +261,113 @@ with st.expander("Concentratierisico — top 3 klanten"):
         "Omzet (€)": "€ {:,.0f}",
         "Aandeel (%)": "{:.1f}%",
     }), use_container_width=True)
+
+st.divider()
+
+# --- Betalingsgedrag ---
+st.header("Betalingsgedrag")
+
+vandaag_ts = pd.Timestamp.now().normalize()
+
+openstaand_df = df[df["payment_state"].isin(["not_paid", "partial"])].copy()
+openstaand_df["vervallen_dagen"] = (vandaag_ts - openstaand_df["invoice_date_due"]).dt.days.clip(lower=0)
+openstaand_df["vervallen"] = openstaand_df["vervallen_dagen"] > 0
+
+totaal_openstaand = openstaand_df["openstaand"].sum()
+totaal_vervallen = openstaand_df[openstaand_df["vervallen"]]["openstaand"].sum()
+aantal_vervallen = int(openstaand_df["vervallen"].sum())
+
+col1, col2, col3 = st.columns(3)
+col1.metric("Totaal openstaand", f"€ {totaal_openstaand:,.0f}")
+col2.metric("Waarvan vervallen", f"€ {totaal_vervallen:,.0f}")
+col3.metric("Aantal vervallen facturen", aantal_vervallen)
+
+with st.expander("Vervallen facturen per klant", expanded=True):
+    vervallen = openstaand_df[openstaand_df["vervallen"]].copy()
+    if vervallen.empty:
+        st.success("Geen vervallen facturen.")
+    else:
+        vervallen_per_klant = (
+            vervallen.groupby("partner_name")
+            .agg(
+                openstaand=("openstaand", "sum"),
+                aantal=("name", "count"),
+                max_vervallen_dagen=("vervallen_dagen", "max"),
+                email=("email", "first"),
+            )
+            .reset_index()
+            .sort_values("openstaand", ascending=False)
+            .rename(columns={
+                "partner_name": "Klant",
+                "openstaand": "Openstaand (€)",
+                "aantal": "Facturen",
+                "max_vervallen_dagen": "Max. vervallen (dagen)",
+                "email": "E-mail",
+            })
+        )
+        st.dataframe(
+            vervallen_per_klant.style.format({"Openstaand (€)": "€ {:,.0f}"}),
+            use_container_width=True,
+        )
+
+with st.expander("Alle openstaande facturen"):
+    if openstaand_df.empty:
+        st.success("Geen openstaande facturen.")
+    else:
+        weergave = openstaand_df[[
+            "name", "partner_name", "email", "invoice_date",
+            "invoice_date_due", "openstaand", "vervallen_dagen", "payment_state"
+        ]].rename(columns={
+            "name": "Factuur",
+            "partner_name": "Klant",
+            "email": "E-mail",
+            "invoice_date": "Factuurdatum",
+            "invoice_date_due": "Vervaldatum",
+            "openstaand": "Openstaand (€)",
+            "vervallen_dagen": "Vervallen (dagen)",
+            "payment_state": "Status",
+        }).sort_values("Vervallen (dagen)", ascending=False)
+        st.dataframe(
+            weergave.style.format({"Openstaand (€)": "€ {:,.0f}"}),
+            use_container_width=True,
+        )
+
+# Gemiddelde betaaldagen per klant
+st.subheader("Gemiddelde betaaltermijn per klant")
+
+with st.spinner("Betalingshistoriek ophalen..."):
+    betalingen = laad_betalingen()
+
+betaal_analyse = bereken_betaaldagen(df, betalingen)
+
+if betaal_analyse.empty:
+    st.info("Geen betalingsdata beschikbaar.")
+else:
+    totaal_gem = betaal_analyse["gem_betaaldagen"].mean()
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Gemiddeld alle klanten", f"{totaal_gem:.1f} dagen")
+    for i, (naam, _) in enumerate(CATEGORIEEN):
+        aantal = len(betaal_analyse[betaal_analyse["categorie"] == naam])
+        [col2, col3, col4, col5][i].metric(naam, f"{aantal} klanten")
+
+    filter_cat = st.selectbox(
+        "Filter op categorie",
+        options=["Alle"] + [naam for naam, _ in CATEGORIEEN],
+    )
+
+    weergave = betaal_analyse if filter_cat == "Alle" else betaal_analyse[betaal_analyse["categorie"] == filter_cat]
+
+    st.dataframe(
+        weergave.rename(columns={
+            "partner_name": "Klant",
+            "email": "E-mail",
+            "categorie": "Categorie",
+            "gem_betaaldagen": "Gem. betaaldagen",
+            "max_betaaldagen": "Max. betaaldagen",
+            "aantal_betaald": "Betaalde facturen",
+        }).style.format({"Gem. betaaldagen": "{:.1f}"}),
+        use_container_width=True,
+    )
 
 st.divider()
 

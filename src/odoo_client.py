@@ -39,13 +39,33 @@ def fetch_invoices():
         ]],
         {
             "fields": [
-                "name", "partner_id", "commercial_partner_id",
-                "invoice_date", "amount_untaxed", "state"
+                "id", "name", "partner_id", "commercial_partner_id",
+                "invoice_date", "invoice_date_due", "amount_untaxed",
+                "amount_residual", "payment_state", "state"
             ],
             "order": "invoice_date asc",
         }
     )
     return invoices
+
+
+def fetch_betaalde_facturen():
+    uid = get_uid()
+    models = get_models()
+
+    facturen = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "account.move", "search_read",
+        [[
+            ["move_type", "=", "out_invoice"],
+            ["state", "=", "posted"],
+            ["payment_state", "in", ["paid", "in_payment", "partial"]],
+        ]],
+        {
+            "fields": ["id", "invoice_date", "invoice_payments_widget"],
+        }
+    )
+    return facturen
 
 
 def fetch_partner_emails(partner_ids: list) -> dict:

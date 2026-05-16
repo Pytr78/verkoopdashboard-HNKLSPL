@@ -18,8 +18,11 @@ def invoices_to_dataframe(invoices: list, partner_emails: dict = None) -> pd.Dat
     df["invoice_date"] = pd.to_datetime(df["invoice_date"])
     df["jaar"] = df["invoice_date"].dt.year
     df["maand"] = df["invoice_date"].dt.to_period("M").astype(str)
-    df = df.rename(columns={"amount_untaxed": "omzet"})
-    return df[["name", "partner_name", "email", "invoice_date", "jaar", "maand", "omzet"]]
+    df = df.rename(columns={"amount_untaxed": "omzet", "amount_residual": "openstaand"})
+    df["invoice_date_due"] = pd.to_datetime(df["invoice_date_due"], errors="coerce")
+    return df[["id", "name", "partner_name", "email", "invoice_date", "invoice_date_due",
+               "jaar", "maand", "omzet", "openstaand", "payment_state",
+               "partner_id_int", "commercial_partner_id_int"]]
 
 
 
