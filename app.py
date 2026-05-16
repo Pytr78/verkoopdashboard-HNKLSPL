@@ -9,6 +9,7 @@ from src.data_processing import (
 )
 from src.charts import lijndiagram, staafdiagram
 from src.management_summary import bereken_samenvatting
+from src.rfm import bereken_rfm, SEGMENTEN
 
 st.set_page_config(
     page_title="Verkoopdashboard HNKLSPL",
@@ -150,11 +151,54 @@ st.plotly_chart(
     use_container_width=True,
 )
 
+# --- RFM Segmentatie ---
+st.divider()
+st.header("Klantsegmentatie (RFM)")
+st.caption("Gebaseerd op Recency (recentheid), Frequency (frequentie) en Monetary (omzet) — scores 1 (laag) tot 4 (hoog)")
+
+rfm_df = bereken_rfm(df)
+
+# Overzicht per segment
+segment_counts = rfm_df["segment"].value_counts().reset_index()
+segment_counts.columns = ["Segment", "Aantal klanten"]
+
+cols = st.columns(len(SEGMENTEN))
+for col, (segment, info) in zip(cols, SEGMENTEN.items()):
+    aantal = len(rfm_df[rfm_df["segment"] == segment])
+    col.metric(segment, aantal)
+    col.caption(info["omschrijving"])
+
+st.divider()
+
+# Filter op segment
+geselecteerd_segment = st.selectbox(
+    "Bekijk klanten per segment",
+    options=["Alle segmenten"] + list(SEGMENTEN.keys()),
+)
+
+rfm_weergave = rfm_df if geselecteerd_segment == "Alle segmenten" else rfm_df[rfm_df["segment"] == geselecteerd_segment]
+
+st.dataframe(
+    rfm_weergave.rename(columns={
+        "partner_name": "Klant",
+        "email": "E-mail",
+        "segment": "Segment",
+        "RFM_score": "Score",
+        "R": "R",
+        "F": "F",
+        "M": "M",
+        "recency_dagen": "Dagen sinds laatste factuur",
+        "aantal_facturen": "Aantal facturen",
+        "totaal_omzet": "Totale omzet (€)",
+    }).style.format({"Totale omzet (€)": "€ {:,.0f}"}),
+    use_container_width=True,
+)
+
 # --- Export ---
 st.divider()
 st.subheader("Export")
 
-def maak_excel(df: pd.DataFrame, omzet_per_maand: pd.DataFrame, omzet_totaal: pd.DataFrame, samenvatting: dict, df_alle: pd.DataFrame = None) -> bytes:
+def maak_excel(df: pd.DataFrame, omzet_per_maand: pd.DataFrame, omzet_totaal: pd.DataFrame, samenvatting: dict, df_alle: pd.DataFrame = None, rfm_df: pd.DataFrame = None) -> bytes:
     email_lookup = (df_alle if df_alle is not None else df).drop_duplicates("partner_name")[["partner_name", "email"]]
 
     def voeg_email_toe(bron_df: pd.DataFrame) -> pd.DataFrame:
@@ -180,9 +224,17 @@ def maak_excel(df: pd.DataFrame, omzet_per_maand: pd.DataFrame, omzet_totaal: pd
         top3_df["Aandeel (%)"] = top3_df["Omzet (€)"] / samenvatting["totaal_omzet"] * 100
         top3_df.to_excel(writer, sheet_name="Concentratierisico", index=False)
 
+        if rfm_df is not None:
+            rfm_export = rfm_df.rename(columns={
+                "partner_name": "Klant", "email": "E-mail", "segment": "Segment",
+                "RFM_score": "Score", "recency_dagen": "Dagen sinds laatste factuur",
+                "aantal_facturen": "Aantal facturen", "totaal_omzet": "Totale omzet (€)",
+            })
+            rfm_export.to_excel(writer, sheet_name="RFM Segmentatie", index=False)
+
     return buffer.getvalue()
 
-excel_data = maak_excel(df_gefilterd, maand_df, totaal_df, samenvatting, df_alle=df)
+excel_data = maak_excel(df_gefilterd, maand_df, totaal_df, samenvatting, df_alle=df, rfm_df=rfm_df)
 st.download_button(
     label="Download Excel",
     data=excel_data,
