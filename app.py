@@ -10,6 +10,7 @@ from src.data_processing import (
 from src.charts import lijndiagram, staafdiagram
 from src.management_summary import bereken_samenvatting
 from src.rfm import bereken_rfm, SEGMENTEN
+from src.doelstellingen import laad_doelstellingen, sla_doelstellingen_op
 
 st.set_page_config(
     page_title="Verkoopdashboard HNKLSPL",
@@ -74,6 +75,86 @@ col1, col2, col3 = st.columns(3)
 col1.metric("Totale omzet", f"€ {df_gefilterd['omzet'].sum():,.0f}")
 col2.metric("Aantal klanten", df_gefilterd["partner_name"].nunique())
 col3.metric("Aantal facturen", len(df_gefilterd))
+
+st.divider()
+
+# --- Omzetdoelstellingen ---
+st.header("Omzetdoelstellingen")
+
+doelstellingen = laad_doelstellingen()
+huidig_jaar = pd.Timestamp.now().year
+df_huidig_jaar = df[df["jaar"] == huidig_jaar]
+omzet_huidig_jaar = df_huidig_jaar["omzet"].sum()
+
+# Totale doelstelling
+col1, col2 = st.columns([2, 1])
+with col1:
+    totaal_doel = doelstellingen.get("totaal", 0)
+    if totaal_doel > 0:
+        voortgang = min(omzet_huidig_jaar / totaal_doel, 1.0)
+        st.metric(
+            f"Totale omzet {huidig_jaar}",
+            f"€ {omzet_huidig_jaar:,.0f}",
+            delta=f"€ {omzet_huidig_jaar - totaal_doel:,.0f} t.o.v. doel",
+        )
+        st.progress(voortgang, text=f"{voortgang*100:.1f}% van € {totaal_doel:,.0f}")
+    else:
+        st.info("Nog geen totale doelstelling ingesteld.")
+
+with col2:
+    with st.expander("Totale doelstelling instellen"):
+        nieuw_totaal = st.number_input(
+            f"Jaardoelstelling {huidig_jaar} (€)",
+            min_value=0,
+            value=int(totaal_doel),
+            step=10000,
+        )
+        if st.button("Opslaan", key="totaal_opslaan"):
+            doelstellingen["totaal"] = nieuw_totaal
+            sla_doelstellingen_op(doelstellingen)
+            st.success("Opgeslagen!")
+            st.rerun()
+
+st.divider()
+
+# Doelstellingen per klant
+with st.expander("Doelstellingen per klant", expanded=True):
+    omzet_per_klant = df_huidig_jaar.groupby("partner_name")["omzet"].sum()
+    alle_klanten = sorted(df["partner_name"].unique().tolist())
+
+    tab1, tab2 = st.tabs(["Voortgang", "Instellen"])
+
+    with tab1:
+        klanten_met_doel = {k: v for k, v in doelstellingen.get("per_klant", {}).items() if v > 0}
+        if not klanten_met_doel:
+            st.info("Nog geen doelstellingen per klant ingesteld. Gebruik het tabblad 'Instellen'.")
+        else:
+            for klant, doel in sorted(klanten_met_doel.items(), key=lambda x: -x[1]):
+                gerealiseerd = omzet_per_klant.get(klant, 0)
+                voortgang = min(gerealiseerd / doel, 1.0)
+                kleur = "normal" if voortgang >= 0.8 else "off"
+                col_a, col_b = st.columns([3, 1])
+                with col_a:
+                    st.write(f"**{klant}**")
+                    st.progress(voortgang, text=f"€ {gerealiseerd:,.0f} / € {doel:,.0f} ({voortgang*100:.1f}%)")
+                with col_b:
+                    verschil = gerealiseerd - doel
+                    st.metric("", f"€ {gerealiseerd:,.0f}", delta=f"€ {verschil:,.0f}")
+
+    with tab2:
+        st.caption("Stel een jaardoelstelling in per klant (0 = geen doel)")
+        per_klant = doelstellingen.get("per_klant", {})
+        gewijzigd = False
+        for klant in alle_klanten:
+            huidig_doel = int(per_klant.get(klant, 0))
+            nieuw_doel = st.number_input(klant, min_value=0, value=huidig_doel, step=1000, key=f"doel_{klant}")
+            if nieuw_doel != huidig_doel:
+                per_klant[klant] = nieuw_doel
+                gewijzigd = True
+        if gewijzigd:
+            doelstellingen["per_klant"] = per_klant
+            sla_doelstellingen_op(doelstellingen)
+            st.success("Doelstellingen opgeslagen!")
 
 st.divider()
 
