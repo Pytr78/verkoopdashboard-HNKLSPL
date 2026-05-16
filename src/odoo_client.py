@@ -8,7 +8,7 @@ load_dotenv()
 def _get_secret(key: str) -> str:
     try:
         return st.secrets["odoo"][key]
-    except (KeyError, AttributeError):
+    except Exception:
         return os.getenv(key)
 
 ODOO_URL = _get_secret("ODOO_URL")
