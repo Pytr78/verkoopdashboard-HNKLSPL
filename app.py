@@ -86,10 +86,25 @@ huidig_jaar = pd.Timestamp.now().year
 df_huidig_jaar = df[df["jaar"] == huidig_jaar]
 omzet_huidig_jaar = df_huidig_jaar["omzet"].sum()
 
-# Totale doelstelling
+totaal_doel = doelstellingen.get("totaal", 0)
+
+# Datumberekeningen
+vandaag = pd.Timestamp.now().normalize()
+jaar_start = vandaag.replace(month=1, day=1)
+jaar_eind = vandaag.replace(month=12, day=31)
+verstreken_dagen = max((vandaag - jaar_start).days, 1)
+resterende_dagen = max((jaar_eind - vandaag).days, 1)
+dagen_in_jaar = 365
+
+# Huidige pace
+gem_per_dag = omzet_huidig_jaar / verstreken_dagen
+gem_per_week = gem_per_dag * 7
+gem_per_maand = gem_per_dag * 30
+prognose_einde_jaar = gem_per_dag * dagen_in_jaar
+
+# Totale doelstelling bovenaan
 col1, col2 = st.columns([2, 1])
 with col1:
-    totaal_doel = doelstellingen.get("totaal", 0)
     if totaal_doel > 0:
         voortgang = min(omzet_huidig_jaar / totaal_doel, 1.0)
         st.metric(
@@ -99,6 +114,7 @@ with col1:
         )
         st.progress(voortgang, text=f"{voortgang*100:.1f}% van € {totaal_doel:,.0f}")
     else:
+        st.metric(f"Totale omzet {huidig_jaar}", f"€ {omzet_huidig_jaar:,.0f}")
         st.info("Nog geen totale doelstelling ingesteld.")
 
 with col2:
@@ -114,6 +130,30 @@ with col2:
             sla_doelstellingen_op(doelstellingen)
             st.success("Opgeslagen!")
             st.rerun()
+
+# Pace KPI's
+st.subheader("Huidige pace")
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Gem. per dag", f"€ {gem_per_dag:,.0f}")
+c2.metric("Gem. per week", f"€ {gem_per_week:,.0f}")
+c3.metric("Gem. per maand", f"€ {gem_per_maand:,.0f}")
+c4.metric("Prognose einde jaar", f"€ {prognose_einde_jaar:,.0f}",
+          delta=f"€ {prognose_einde_jaar - totaal_doel:,.0f}" if totaal_doel > 0 else None)
+
+if totaal_doel > 0:
+    resterend = max(totaal_doel - omzet_huidig_jaar, 0)
+    benodigde_dag = resterend / resterende_dagen
+    benodigde_week = benodigde_dag * 7
+    benodigde_maand = benodigde_dag * 30
+
+    st.subheader(f"Benodigde pace om doel te halen ({resterende_dagen} dagen resterend)")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Nog te realiseren", f"€ {resterend:,.0f}")
+    c2.metric("Benodigd per dag", f"€ {benodigde_dag:,.0f}",
+              delta=f"€ {gem_per_dag - benodigde_dag:,.0f} vs huidige pace",
+              delta_color="normal")
+    c3.metric("Benodigd per week", f"€ {benodigde_week:,.0f}")
+    c4.metric("Benodigd per maand", f"€ {benodigde_maand:,.0f}")
 
 st.divider()
 
