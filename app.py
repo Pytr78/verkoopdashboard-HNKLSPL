@@ -23,11 +23,11 @@ st.set_page_config(
 
 st.title("Verkoopdashboard")
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)
 def laad_betalingen():
     return fetch_betaalde_facturen()
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)
 def laad_data():
     invoices = fetch_invoices()
     if not invoices:
@@ -53,6 +53,12 @@ if df.empty:
 
 # --- Sidebar filters ---
 st.sidebar.header("Filters")
+
+if st.sidebar.button("🔄 Data verversen"):
+    st.cache_data.clear()
+    st.rerun()
+
+st.sidebar.caption("Data wordt automatisch ververst om de 24 uur.")
 
 alle_partners = sorted(df["partner_name"].unique().tolist())
 geselecteerde_partners = st.sidebar.multiselect(
