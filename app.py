@@ -13,6 +13,7 @@ from src.rfm import bereken_rfm, SEGMENTEN
 from src.doelstellingen import laad_doelstellingen, sla_doelstellingen_op
 from src.betalingsanalyse import bereken_betaaldagen, CATEGORIEEN
 from src.odoo_client import fetch_betaalde_facturen
+from src.actiepunten import genereer_actiepunten
 
 st.set_page_config(
     page_title="Verkoopdashboard HNKLSPL",
@@ -81,6 +82,37 @@ col1, col2, col3 = st.columns(3)
 col1.metric("Totale omzet", f"€ {df_gefilterd['omzet'].sum():,.0f}")
 col2.metric("Aantal klanten", df_gefilterd["partner_name"].nunique())
 col3.metric("Aantal facturen", len(df_gefilterd))
+
+st.divider()
+
+# --- Actiepunten ---
+st.header("Actiepunten")
+st.caption("Automatisch gegenereerd op basis van alle analyses")
+
+betalingen_voor_acties = laad_betalingen()
+betaal_analyse_voor_acties = bereken_betaaldagen(df, betalingen_voor_acties)
+rfm_voor_acties = bereken_rfm(df)
+samenvatting_voor_acties = bereken_samenvatting(df)
+doelstellingen_voor_acties = laad_doelstellingen()
+
+actiepunten = genereer_actiepunten(
+    df, samenvatting_voor_acties, rfm_voor_acties,
+    betaal_analyse_voor_acties, doelstellingen_voor_acties
+)
+
+if not actiepunten:
+    st.success("Geen actiepunten — alles ziet er goed uit!")
+else:
+    for actie in actiepunten:
+        with st.expander(f"{actie['prioriteit']} — {actie['categorie']}: {actie['actie']}"):
+            st.write(f"**{actie['detail']}**")
+            if actie["klanten"]:
+                st.write("**Betrokken klanten:**")
+                st.dataframe(
+                    pd.DataFrame({"Klant": actie["klanten"]}),
+                    hide_index=True,
+                    use_container_width=True,
+                )
 
 st.divider()
 
