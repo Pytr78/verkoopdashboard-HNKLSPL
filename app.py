@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import plotly.express as px
 from src.odoo_client import fetch_invoices, fetch_partner_emails, fetch_betaalde_facturen
 from src.data_processing import invoices_to_dataframe, omzet_per_partner_per_maand, omzet_per_partner_totaal
 from src.charts import lijndiagram, staafdiagram
@@ -9,6 +10,7 @@ from src.rfm import bereken_rfm, SEGMENTEN
 from src.doelstellingen import laad_doelstellingen, sla_doelstellingen_op
 from src.betalingsanalyse import bereken_betaaldagen, CATEGORIEEN
 from src.actiepunten import genereer_actiepunten
+from src.cashflow import bereken_cashflow_prognose, cashflow_per_periode
 
 st.set_page_config(page_title="Verkoopdashboard HNKLSPL", page_icon="📊", layout="wide")
 st.title("Verkoopdashboard")
@@ -82,13 +84,14 @@ col4.metric("Aantal facturen", len(df_gefilterd))
 st.divider()
 
 # --- Tabs ---
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🚨 Actiepunten",
     "🎯 Doelstellingen",
     "📊 Grafieken",
     "📈 Omzettrends",
     "👥 Klantsegmentatie",
     "💳 Betalingsgedrag",
+    "💰 Cashflow",
 ])
 
 # ── Tab 1: Actiepunten ──────────────────────────────────────────────────────
@@ -351,3 +354,60 @@ with tab6:
             "partner_name": "Klant", "email": "E-mail", "categorie": "Categorie",
             "gem_betaaldagen": "Gem. betaaldagen", "max_betaaldagen": "Max. betaaldagen", "aantal_betaald": "Betaalde facturen"
         }).style.format({"Gem. betaaldagen": "{:.1f}"}), use_container_width=True)
+
+# ── Tab 7: Cashflow ─────────────────────────────────────────────────────────
+with tab7:
+    st.header("Cashflow prognose")
+    st.caption("Verwachte inkomsten op basis van openstaande facturen en historisch betalingsgedrag per klant")
+
+    prognose_df = bereken_cashflow_prognose(df, betaal_analyse)
+
+    if prognose_df.empty:
+        st.success("Geen openstaande facturen.")
+    else:
+        periode_df = cashflow_per_periode(prognose_df)
+        totaal_openstaand = prognose_df["openstaand"].sum()
+        binnen_30 = prognose_df[prognose_df["dagen_tot_betaling"] <= 30]["openstaand"].sum()
+        binnen_60 = prognose_df[prognose_df["dagen_tot_betaling"] <= 60]["openstaand"].sum()
+        binnen_90 = prognose_df[prognose_df["dagen_tot_betaling"] <= 90]["openstaand"].sum()
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Totaal openstaand", f"€ {totaal_openstaand:,.0f}")
+        col2.metric("Verwacht binnen 30 dagen", f"€ {binnen_30:,.0f}")
+        col3.metric("Verwacht binnen 60 dagen", f"€ {binnen_60:,.0f}")
+        col4.metric("Verwacht binnen 90 dagen", f"€ {binnen_90:,.0f}")
+
+        st.plotly_chart(
+            px.bar(
+                periode_df,
+                x="periode",
+                y="verwacht_bedrag",
+                labels={"periode": "Periode", "verwacht_bedrag": "Verwacht bedrag (€)"},
+                title="Verwachte cashflow per periode",
+                color="periode",
+                color_discrete_sequence=["#2ecc71", "#3498db", "#e67e22", "#e74c3c"],
+            ).update_layout(showlegend=False).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+            use_container_width=True,
+        )
+
+        with st.expander("Detail per klant"):
+            per_klant = (
+                prognose_df.groupby(["partner_name", "periode"])
+                .agg(verwacht=("openstaand", "sum"), facturen=("name", "count"), email=("email", "first"))
+                .reset_index()
+                .sort_values(["periode", "verwacht"], ascending=[True, False])
+                .rename(columns={"partner_name": "Klant", "email": "E-mail", "periode": "Periode",
+                                 "verwacht": "Verwacht (€)", "facturen": "Facturen"})
+            )
+            st.dataframe(per_klant.style.format({"Verwacht (€)": "€ {:,.0f}"}), use_container_width=True)
+
+        with st.expander("Detail per factuur"):
+            st.dataframe(
+                prognose_df.rename(columns={
+                    "name": "Factuur", "partner_name": "Klant", "email": "E-mail",
+                    "invoice_date": "Factuurdatum", "invoice_date_due": "Vervaldatum",
+                    "openstaand": "Openstaand (€)", "verwachte_betaaldatum": "Verwachte betaling",
+                    "dagen_tot_betaling": "Dagen", "periode": "Periode", "bron": "Schatting op basis van",
+                }).sort_values("Dagen").style.format({"Openstaand (€)": "€ {:,.0f}"}),
+                use_container_width=True,
+            )
