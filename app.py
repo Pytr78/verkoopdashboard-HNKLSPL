@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import io
@@ -13,6 +14,28 @@ from src.actiepunten import genereer_actiepunten
 from src.cashflow import bereken_cashflow_prognose, cashflow_per_periode
 
 st.set_page_config(page_title="Verkoopdashboard HNKLSPL", page_icon="📊", layout="wide")
+
+# --- Toegangsbeveiliging ---
+def check_wachtwoord():
+    juist_wachtwoord = st.secrets.get("auth", {}).get("password") or os.getenv("DASHBOARD_PASSWORD", "")
+    if not juist_wachtwoord:
+        return True  # geen wachtwoord ingesteld, vrije toegang
+    if st.session_state.get("ingelogd"):
+        return True
+    st.title("Verkoopdashboard HNKLSPL")
+    with st.form("login"):
+        ww = st.text_input("Wachtwoord", type="password")
+        if st.form_submit_button("Inloggen"):
+            if ww == juist_wachtwoord:
+                st.session_state["ingelogd"] = True
+                st.rerun()
+            else:
+                st.error("Ongeldig wachtwoord.")
+    return False
+
+if not check_wachtwoord():
+    st.stop()
+
 st.title("Verkoopdashboard")
 
 # --- Data laden ---
