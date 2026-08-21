@@ -689,6 +689,23 @@ with tab9:
 
         loon_df = pd.DataFrame(loon_personeel)
         loon_df["maand"] = loon_df.apply(_periode_uit_omschrijving, axis=1)
+        loon_df["betaaldatum_maand"] = pd.to_datetime(loon_df["date"]).dt.strftime("%Y-%m")
+
+        with st.expander(f"🔍 Diagnostiek: {len(loon_raw)} rijen opgehaald, {len(loon_personeel)} na filtering"):
+            diag_df = loon_df[["date", "betaaldatum_maand", "maand", "name", "ref",
+                                "partner_id", "account_id", "debit"]].copy()
+            diag_df["Partner"] = diag_df["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
+            diag_df["Rekening"] = diag_df["account_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
+            st.dataframe(
+                diag_df[["date", "betaaldatum_maand", "maand", "Partner", "Rekening", "name", "ref", "debit"]]
+                .rename(columns={"date": "Datum", "betaaldatum_maand": "Maand (datum)",
+                                 "maand": "Maand (omschrijving)", "name": "Omschrijving",
+                                 "ref": "Referentie", "debit": "Bedrag (€)"})
+                .sort_values("Datum")
+                .style.format({"Bedrag (€)": "€ {:,.0f}"}),
+                use_container_width=True, hide_index=True,
+            )
+
         loon_maand = loon_df.groupby("maand")["debit"].sum().reset_index()
         loon_maand["Personeelskost (€)"] = loon_maand["debit"]
         loon_maand = loon_maand[["maand", "Personeelskost (€)"]].rename(columns={"maand": "Maand"})
