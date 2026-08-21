@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import io
 import plotly.express as px
-from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen, fetch_employees
+from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen, fetch_employees, fetch_loonkosten
 from src.data_processing import invoices_to_dataframe, omzet_per_partner_per_maand, omzet_per_partner_totaal
 from src.charts import lijndiagram, staafdiagram
 from src.management_summary import bereken_samenvatting
@@ -63,6 +63,10 @@ def laad_betalingen():
 @st.cache_data(ttl=86400)
 def laad_werknemers():
     return fetch_employees()
+
+@st.cache_data(ttl=86400)
+def laad_loonkosten():
+    return fetch_loonkosten()
 
 with st.spinner("Data ophalen uit Odoo..."):
     df = laad_data()
@@ -552,8 +556,48 @@ with tab8:
 # ── Tab 9: Personeelskosten ─────────────────────────────────────────────────
 with tab9:
     st.header("Personeelskosten")
-    st.caption("Stap 1: overzicht werknemers per functie en afdeling — basis voor rendabiliteitsanalyse per domein")
+    st.caption("Overzicht werknemers per functie en loonkosten via rekening 'Te betalen Lonen'")
 
+    loon_raw = laad_loonkosten()
+    if loon_raw:
+        loon_df = pd.DataFrame(loon_raw)
+        loon_df["date"] = pd.to_datetime(loon_df["date"])
+        loon_df["jaar"] = loon_df["date"].dt.year
+        loon_df["maand"] = loon_df["date"].dt.to_period("M").astype(str)
+        loon_df["partner"] = loon_df["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
+        loon_df["rekening"] = loon_df["account_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
+        loon_df["bedrag"] = loon_df["debit"] - loon_df["credit"]
+
+        totaal_loon = loon_df["debit"].sum()
+        huidig_jaar_loon = loon_df[loon_df["jaar"] == pd.Timestamp.now().year]["debit"].sum()
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Totale loonkost (alle jaren)", f"€ {totaal_loon:,.0f}")
+        c2.metric(f"Loonkost {pd.Timestamp.now().year}", f"€ {huidig_jaar_loon:,.0f}")
+        c3.metric("Aantal boekingen", len(loon_df))
+
+        st.divider()
+
+        loon_per_jaar = loon_df.groupby("jaar")["debit"].sum().reset_index().rename(columns={"jaar": "Jaar", "debit": "Loonkost (€)"})
+        st.plotly_chart(
+            px.bar(loon_per_jaar, x="Jaar", y="Loonkost (€)", text_auto=".3s",
+                   title="Loonkost per jaar").update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+            use_container_width=True,
+        )
+
+        with st.expander("Detail boekingen"):
+            st.dataframe(
+                loon_df[["date", "maand", "partner", "name", "debit", "credit", "rekening"]]
+                .rename(columns={"date": "Datum", "maand": "Maand", "partner": "Tegenpartij",
+                                 "name": "Omschrijving", "debit": "Debet (€)", "credit": "Credit (€)", "rekening": "Rekening"})
+                .sort_values("Datum", ascending=False)
+                .style.format({"Debet (€)": "€ {:,.0f}", "Credit (€)": "€ {:,.0f}"}),
+                use_container_width=True, hide_index=True,
+            )
+    else:
+        st.info("Geen boekingen gevonden op rekening 'Te betalen Lonen'. Controleer de rekeningnaam in Odoo.")
+
+    st.divider()
     werknemers_raw = laad_werknemers()
 
     if not werknemers_raw:

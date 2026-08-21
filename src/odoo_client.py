@@ -103,6 +103,32 @@ def fetch_partner_emails(partner_ids: list) -> dict:
     return emails
 
 
+def fetch_loonkosten() -> list:
+    uid = get_uid()
+    models = get_models()
+
+    accounts = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "account.account", "search_read",
+        [[["name", "ilike", "te betalen lonen"]]],
+        {"fields": ["id", "name", "code"]}
+    )
+    if not accounts:
+        return []
+
+    account_ids = [a["id"] for a in accounts]
+    lines = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "account.move.line", "search_read",
+        [[
+            ["account_id", "in", account_ids],
+            ["move_id.state", "=", "posted"],
+        ]],
+        {"fields": ["id", "date", "name", "partner_id", "debit", "credit", "account_id", "move_id"]}
+    )
+    return lines
+
+
 def fetch_employees() -> list:
     uid = get_uid()
     models = get_models()
