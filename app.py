@@ -1,4 +1,5 @@
 import os
+import re
 import streamlit as st
 import pandas as pd
 import io
@@ -675,12 +676,18 @@ with tab9:
         loon_personeel = [r for r in loon_raw if "bezoldiging" not in (
             r["account_id"][1] if isinstance(r.get("account_id"), list) else ""
         ).lower()]
-        loon_maand = (
-            pd.DataFrame(loon_personeel)
-            .assign(maand=lambda d: pd.to_datetime(d["date"]).dt.to_period("M").astype(str))
-            .groupby("maand")["debit"].sum()
-            .reset_index()
-        )
+
+        def _periode_uit_omschrijving(rij) -> str:
+            # Zoek MM/YYYY in omschrijving of referentie; val terug op betaaldatum
+            for veld in (rij.get("name", "") or "", rij.get("ref", "") or ""):
+                m = re.search(r'\b(\d{2})/(\d{4})\b', veld)
+                if m:
+                    return f"{m.group(2)}-{m.group(1)}"
+            return pd.to_datetime(rij["date"]).strftime("%Y-%m")
+
+        loon_df = pd.DataFrame(loon_personeel)
+        loon_df["maand"] = loon_df.apply(_periode_uit_omschrijving, axis=1)
+        loon_maand = loon_df.groupby("maand")["debit"].sum().reset_index()
         loon_maand["Personeelskost (€)"] = loon_maand["debit"] * ratio
         loon_maand = loon_maand[["maand", "Personeelskost (€)"]].rename(columns={"maand": "Maand"})
 
@@ -740,11 +747,8 @@ with tab9:
                 gekozen_maand = detail_df.iloc[gekozen_rijen[0]]["Maand"]
                 st.markdown(f"### Bankverrichtingen — {gekozen_maand}")
 
-                # Loonbetalingen voor die maand
-                loon_detail = pd.DataFrame([
-                    r for r in loon_personeel
-                    if pd.to_datetime(r["date"]).strftime("%Y-%m") == gekozen_maand
-                ])
+                # Loonbetalingen voor die maand (gefilterd op periode uit omschrijving)
+                loon_detail = loon_df[loon_df["maand"] == gekozen_maand].copy()
                 if not loon_detail.empty:
                     loon_detail["Partner"] = loon_detail["partner_id"].apply(
                         lambda x: x[1] if isinstance(x, list) else "—"
