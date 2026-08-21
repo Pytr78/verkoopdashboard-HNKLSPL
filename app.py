@@ -649,19 +649,10 @@ with tab9:
     if not loon_raw or not werknemers_raw:
         st.info("Loondata of werknemersdata ontbreekt.")
     else:
-        # Klantsegmenten op basis van klant:-labels
-        df_met_labels = df.copy()
-        df_met_labels["klant_label"] = df_met_labels["labels"].apply(
-            lambda xs: [x[len("klant:"):].strip() for x in xs if x.lower().startswith("klant:")]
-        )
-        alle_labels = sorted({l for ls in df_met_labels["klant_label"] for l in ls})
         alle_functies = sorted({
             e["job_id"][1] for e in werknemers_raw if isinstance(e.get("job_id"), list)
         })
-
-        col_l, col_r = st.columns(2)
-        gekozen_label = col_l.radio("Klantsegment", options=alle_labels, horizontal=True)
-        gekozen_functie = col_r.selectbox("Personeelsfunctie", options=alle_functies)
+        gekozen_functie = st.selectbox("Personeelsfunctie", options=alle_functies)
 
         # Werknemers van gekozen functie
         werknemers_functie = [
@@ -693,9 +684,9 @@ with tab9:
         loon_maand["Personeelskost (€)"] = loon_maand["debit"] * ratio
         loon_maand = loon_maand[["maand", "Personeelskost (€)"]].rename(columns={"maand": "Maand"})
 
-        # Omzet voor gekozen segment
+        # Omzet Hinkelspelwinkels
         omzet_segment = (
-            df_met_labels[df_met_labels["klant_label"].apply(lambda ls: gekozen_label in ls)]
+            df[df["partner_name"].str.contains("Hinkelspel", case=False, na=False)]
             .groupby("maand")["omzet"].sum()
             .reset_index()
             .rename(columns={"maand": "Maand", "omzet": "Omzet (€)"})
@@ -709,7 +700,7 @@ with tab9:
         totaal_marge = vergelijk_df["Marge (€)"].sum()
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric(f"Omzet {gekozen_label}", f"€ {totaal_omzet:,.0f}")
+        c1.metric("Omzet Hinkelspelwinkels", f"€ {totaal_omzet:,.0f}")
         c2.metric(f"Loonskost {gekozen_functie}", f"€ {totaal_kost:,.0f}")
         c3.metric("Marge", f"€ {totaal_marge:,.0f}")
         c4.metric("Rendabiliteit", f"{totaal_marge / totaal_omzet * 100:.1f}%" if totaal_omzet else "—")
@@ -719,7 +710,7 @@ with tab9:
                 vergelijk_df.melt(id_vars="Maand", value_vars=["Omzet (€)", "Personeelskost (€)", "Marge (€)"]),
                 x="Maand", y="value", color="variable", barmode="group",
                 labels={"value": "Bedrag (€)", "variable": "", "Maand": "Maand"},
-                title=f"Omzet {gekozen_label} vs. loonskost {gekozen_functie}",
+                title=f"Omzet Hinkelspelwinkels vs. loonskost {gekozen_functie}",
             ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
             use_container_width=True,
         )
