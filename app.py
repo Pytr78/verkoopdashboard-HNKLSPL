@@ -704,12 +704,6 @@ with tab9:
                 pd.DataFrame(emp_rijen).style.format({"Totaal (€)": "€ {:,.0f}"}),
                 use_container_width=True, hide_index=True,
             )
-            st.caption("Alle tekst in banktransacties (partner + omschrijving):")
-            diagnose = loon_df_all[["maand", "partner_naam", "omschrijving", "referentie", "debit"]].rename(columns={
-                "maand": "Maand", "partner_naam": "Partner", "omschrijving": "Omschrijving",
-                "referentie": "Referentie", "debit": "Bedrag (€)"
-            }).sort_values("Maand")
-            st.dataframe(diagnose.style.format({"Bedrag (€)": "€ {:,.0f}"}), use_container_width=True, hide_index=True)
 
         if not loon_individueel.empty:
             st.caption(f"✅ Individuele betalingen gevonden voor werknemers uit '{gekozen_functie}' in banktransacties.")
