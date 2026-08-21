@@ -659,66 +659,30 @@ with tab9:
             e for e in werknemers_raw
             if isinstance(e.get("job_id"), list) and e["job_id"][1] == gekozen_functie
         ]
-        TUSSENWOORDEN = {"van", "de", "den", "der", "ter", "ten", "het", "een", "d"}
 
-        def naam_match(werknemer_naam: str, bank_naam: str) -> bool:
-            # Vergelijk enkel de betekenisvolle naamsdelen (geen tussenwoorden)
-            delen = {w for w in werknemer_naam.lower().split() if w not in TUSSENWOORDEN}
-            bank_delen = set(bank_naam.lower().split())
-            return bool(delen) and delen.issubset(bank_delen)
+        with st.expander(f"👤 Werknemers met functie '{gekozen_functie}' ({len(werknemers_functie)})"):
+            st.dataframe(pd.DataFrame([{
+                "Werknemer": e["name"],
+                "Afdeling": e["department_id"][1] if isinstance(e.get("department_id"), list) else "",
+            } for e in werknemers_functie]), use_container_width=True, hide_index=True)
 
-        # Alle personeelskosten (lonen + bezoldigingen) voor individuele matching
-        loon_df_all = pd.DataFrame(loon_raw)
-        loon_df_all["partner_naam"] = loon_df_all["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
-        loon_df_all["omschrijving"] = loon_df_all["name"].fillna("")
-        loon_df_all["referentie"] = loon_df_all["ref"].fillna("")
-        loon_df_all["maand"] = pd.to_datetime(loon_df_all["date"]).dt.to_period("M").astype(str)
+        # Verdeelsleutel: aandeel van functie in totaal personeelsbestand
+        totaal_werknemers = len(werknemers_raw)
+        ratio = len(werknemers_functie) / totaal_werknemers if totaal_werknemers > 0 else 0
+        st.caption(f"{len(werknemers_functie)} van {totaal_werknemers} werknemers = **{ratio*100:.1f}%** van totale loonskost")
 
-        def zoektekst(rij):
-            return f"{rij['partner_naam']} {rij['omschrijving']} {rij['referentie']}"
-
-        alle_bank_namen = loon_df_all.apply(zoektekst, axis=1).tolist()
-
-        def gevonden_in_bank(werknemer_naam):
-            return any(naam_match(werknemer_naam, b) for b in alle_bank_namen)
-
-        def filter_rijen_werknemer(werknemer_naam):
-            return loon_df_all[loon_df_all.apply(lambda r: naam_match(werknemer_naam, zoektekst(r)), axis=1)]
-
-        loon_individueel = pd.concat([
-            filter_rijen_werknemer(e["name"]) for e in werknemers_functie
-        ]).drop_duplicates(subset=["id"]) if werknemers_functie else pd.DataFrame()
-
-        with st.expander(f"👤 Werknemers met functie '{gekozen_functie}'"):
-            emp_rijen = []
-            for e in werknemers_functie:
-                matches = filter_rijen_werknemer(e["name"])
-                maanden = sorted(matches["maand"].unique()) if not matches.empty else []
-                emp_rijen.append({
-                    "Werknemer": e["name"],
-                    "Gevonden in bank": "✅" if maanden else "❌",
-                    "Maanden gevonden": ", ".join(maanden) if maanden else "—",
-                    "Totaal (€)": matches["debit"].sum() if not matches.empty else 0,
-                })
-            st.dataframe(
-                pd.DataFrame(emp_rijen).style.format({"Totaal (€)": "€ {:,.0f}"}),
-                use_container_width=True, hide_index=True,
-            )
-
-        if not loon_individueel.empty:
-            st.caption(f"✅ Individuele betalingen gevonden voor werknemers uit '{gekozen_functie}' in banktransacties.")
-            loon_maand = (
-                loon_individueel.groupby("maand")["debit"].sum()
-                .reset_index()
-                .rename(columns={"maand": "Maand", "debit": "Personeelskost (€)"})
-            )
-        else:
-            totaal_werknemers = len(werknemers_raw)
-            ratio = len(werknemers_functie) / totaal_werknemers if totaal_werknemers > 0 else 0
-            st.caption(f"⚠️ Geen individuele betalingen op naam gevonden — verdeelsleutel: {len(werknemers_functie)}/{totaal_werknemers} = **{ratio*100:.1f}%**")
-            loon_maand = loon_df_all.groupby("maand")["debit"].sum().reset_index()
-            loon_maand["Personeelskost (€)"] = loon_maand["debit"] * ratio
-            loon_maand = loon_maand[["maand", "Personeelskost (€)"]].rename(columns={"maand": "Maand"})
+        # Loonkost enkel uit "te betalen lonen" (niet bezoldigingen)
+        loon_personeel = [r for r in loon_raw if "bezoldiging" not in (
+            r["account_id"][1] if isinstance(r.get("account_id"), list) else ""
+        ).lower()]
+        loon_maand = (
+            pd.DataFrame(loon_personeel)
+            .assign(maand=lambda d: pd.to_datetime(d["date"]).dt.to_period("M").astype(str))
+            .groupby("maand")["debit"].sum()
+            .reset_index()
+        )
+        loon_maand["Personeelskost (€)"] = loon_maand["debit"] * ratio
+        loon_maand = loon_maand[["maand", "Personeelskost (€)"]].rename(columns={"maand": "Maand"})
 
         # Omzet Hinkelspelwinkels
         omzet_segment = (
