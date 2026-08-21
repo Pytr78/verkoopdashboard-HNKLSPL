@@ -723,7 +723,8 @@ with tab9:
             detail_df["Rendabiliteit (%)"] = detail_df.apply(
                 lambda r: r["Marge (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] != 0 else 0, axis=1
             )
-            st.dataframe(
+            st.caption("Klik op een rij om de onderliggende bankverrichtingen te zien.")
+            selectie = st.dataframe(
                 detail_df.style.format({
                     "Omzet (€)": "€ {:,.0f}",
                     "Personeelskost (€)": "€ {:,.0f}",
@@ -732,4 +733,54 @@ with tab9:
                     "Rendabiliteit (%)": "{:.1f}%",
                 }),
                 use_container_width=True, hide_index=True,
+                on_select="rerun", selection_mode="single-row",
             )
+            gekozen_rijen = selectie.selection.rows if selectie and hasattr(selectie, "selection") else []
+            if gekozen_rijen:
+                gekozen_maand = detail_df.iloc[gekozen_rijen[0]]["Maand"]
+                st.markdown(f"### Bankverrichtingen — {gekozen_maand}")
+
+                # Loonbetalingen voor die maand
+                loon_detail = pd.DataFrame([
+                    r for r in loon_personeel
+                    if pd.to_datetime(r["date"]).strftime("%Y-%m") == gekozen_maand
+                ])
+                if not loon_detail.empty:
+                    loon_detail["Partner"] = loon_detail["partner_id"].apply(
+                        lambda x: x[1] if isinstance(x, list) else "—"
+                    )
+                    loon_detail["Rekening"] = loon_detail["account_id"].apply(
+                        lambda x: x[1] if isinstance(x, list) else "—"
+                    )
+                    loon_detail["Aandeel (€)"] = loon_detail["debit"] * ratio
+                    totaal_brut = loon_detail["debit"].sum()
+                    totaal_aandeel = loon_detail["Aandeel (€)"].sum()
+                    st.caption(
+                        f"Totale loonbetaling: € {totaal_brut:,.0f} × {ratio*100:.1f}% = "
+                        f"**€ {totaal_aandeel:,.0f}** personeelskost {gekozen_functie}"
+                    )
+                    st.dataframe(
+                        loon_detail[["date", "Partner", "Rekening", "name", "ref", "debit", "Aandeel (€)"]].rename(
+                            columns={"date": "Datum", "name": "Omschrijving", "ref": "Referentie", "debit": "Bedrag (€)"}
+                        ).style.format({"Bedrag (€)": "€ {:,.0f}", "Aandeel (€)": "€ {:,.0f}"}),
+                        use_container_width=True, hide_index=True,
+                    )
+                else:
+                    st.info(f"Geen loonbetalingen gevonden voor {gekozen_maand}.")
+
+                # Hinkelspelwinkels facturen voor die maand
+                st.markdown(f"#### Facturen Hinkelspelwinkels — {gekozen_maand}")
+                facturen_maand = df[
+                    df["partner_name"].str.contains("Hinkelspel", case=False, na=False) &
+                    (df["maand"] == gekozen_maand)
+                ][["name", "partner_name", "invoice_date", "omzet", "payment_state"]].rename(
+                    columns={"name": "Factuur", "partner_name": "Klant",
+                             "invoice_date": "Datum", "omzet": "Omzet (€)", "payment_state": "Betaalstatus"}
+                )
+                if not facturen_maand.empty:
+                    st.dataframe(
+                        facturen_maand.style.format({"Omzet (€)": "€ {:,.0f}"}),
+                        use_container_width=True, hide_index=True,
+                    )
+                else:
+                    st.info(f"Geen facturen voor Hinkelspelwinkels in {gekozen_maand}.")
