@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import io
 import plotly.express as px
-from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen, fetch_employees, fetch_personeelskosten
+from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen, fetch_employees, fetch_personeelskosten, fetch_payslips
 from src.data_processing import invoices_to_dataframe, omzet_per_partner_per_maand, omzet_per_partner_totaal
 from src.charts import lijndiagram, staafdiagram
 from src.management_summary import bereken_samenvatting
@@ -67,6 +67,10 @@ def laad_werknemers():
 @st.cache_data(ttl=86400)
 def laad_personeelskosten():
     return fetch_personeelskosten()
+
+@st.cache_data(ttl=86400)
+def laad_payslips():
+    return fetch_payslips()
 
 with st.spinner("Data ophalen uit Odoo..."):
     df = laad_data()
@@ -640,3 +644,80 @@ with tab9:
                 .sort_values("Werknemers", ascending=False),
                 use_container_width=True, hide_index=True,
             )
+
+    st.divider()
+    st.subheader("Rendabiliteit winkelpersoneel vs. Hinkelspelwinkels")
+
+    payslip_raw = laad_payslips()
+    if not payslip_raw:
+        st.info("Geen loonstroken gevonden in Odoo. Loonstroken zijn nodig om kosten per functie te berekenen.")
+    else:
+        ps_df = pd.DataFrame(payslip_raw)
+        ps_df["employee_name"] = ps_df["employee_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
+        ps_df["employee_id_int"] = ps_df["employee_id"].apply(lambda x: x[0] if isinstance(x, list) else x)
+        ps_df["date_from"] = pd.to_datetime(ps_df["date_from"])
+        ps_df["maand"] = ps_df["date_from"].dt.to_period("M").astype(str)
+        ps_df["jaar"] = ps_df["date_from"].dt.year
+
+        # Koppel functie via werknemer-lookup
+        if werknemers_raw:
+            emp_lookup = {
+                e["id"]: e["job_id"][1] if isinstance(e.get("job_id"), list) else ""
+                for e in werknemers_raw
+            }
+            ps_df["functie"] = ps_df["employee_id_int"].map(emp_lookup).fillna("")
+        else:
+            ps_df["functie"] = ""
+
+        alle_functies = sorted(ps_df["functie"].unique().tolist())
+        gekozen_functie = st.selectbox(
+            "Selecteer functie (winkelmedewerkers)",
+            options=alle_functies,
+            index=0,
+        )
+
+        kost_df = (
+            ps_df[ps_df["functie"] == gekozen_functie]
+            .groupby("maand")["basic_wage"]
+            .sum()
+            .reset_index()
+            .rename(columns={"maand": "Maand", "basic_wage": "Personeelskost (€)"})
+        )
+
+        # Omzet Hinkelspelwinkels
+        hinkel_df = (
+            df[df["partner_name"].str.contains("Hinkelspel", case=False, na=False)]
+            .groupby("maand")["omzet"]
+            .sum()
+            .reset_index()
+            .rename(columns={"maand": "Maand", "omzet": "Omzet (€)"})
+        )
+
+        vergelijk_df = kost_df.merge(hinkel_df, on="Maand", how="outer").fillna(0).sort_values("Maand")
+        vergelijk_df["Marge (€)"] = vergelijk_df["Omzet (€)"] - vergelijk_df["Personeelskost (€)"]
+
+        if vergelijk_df.empty:
+            st.info("Geen data beschikbaar voor de geselecteerde combinatie.")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Totale omzet Hinkelspelwinkels", f"€ {vergelijk_df['Omzet (€)'].sum():,.0f}")
+            c2.metric(f"Totale personeelskost ({gekozen_functie})", f"€ {vergelijk_df['Personeelskost (€)'].sum():,.0f}")
+            c3.metric("Totale marge", f"€ {vergelijk_df['Marge (€)'].sum():,.0f}")
+
+            fig = px.bar(
+                vergelijk_df.melt(id_vars="Maand", value_vars=["Omzet (€)", "Personeelskost (€)", "Marge (€)"]),
+                x="Maand", y="value", color="variable", barmode="group",
+                labels={"value": "Bedrag (€)", "variable": "", "Maand": "Maand"},
+                title=f"Omzet Hinkelspelwinkels vs. kost {gekozen_functie} per maand",
+            ).update_yaxes(tickprefix="€ ", tickformat=",.0f")
+            st.plotly_chart(fig, use_container_width=True)
+
+            with st.expander("Detail per maand"):
+                st.dataframe(
+                    vergelijk_df.style.format({
+                        "Omzet (€)": "€ {:,.0f}",
+                        "Personeelskost (€)": "€ {:,.0f}",
+                        "Marge (€)": "€ {:,.0f}",
+                    }),
+                    use_container_width=True, hide_index=True,
+                )

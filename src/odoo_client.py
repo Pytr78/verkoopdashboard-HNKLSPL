@@ -140,3 +140,14 @@ def fetch_employees() -> list:
         [[["active", "=", True]]],
         {"fields": ["id", "name", "job_id", "job_title", "department_id"]}
     )
+
+
+def fetch_payslips() -> list:
+    uid = get_uid()
+    models = get_models()
+    return models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "hr.payslip", "search_read",
+        [[["state", "in", ["done", "paid"]]]],
+        {"fields": ["id", "employee_id", "date_from", "date_to", "net_wage", "basic_wage"]}
+    )
