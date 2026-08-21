@@ -649,11 +649,20 @@ with tab9:
     if not loon_raw or not werknemers_raw:
         st.info("Loondata of werknemersdata ontbreekt.")
     else:
-        # Functies uit HR
+        # Klantsegmenten op basis van klant:-labels
+        df_labels = df.copy()
+        df_labels["klant_label"] = df_labels["labels"].apply(
+            lambda xs: [x[len("klant:"):].strip() for x in xs if x.lower().startswith("klant:")]
+        )
+        alle_labels = sorted({l for ls in df_labels["klant_label"] for l in ls})
+
         alle_functies = sorted({
             e["job_id"][1] for e in werknemers_raw if isinstance(e.get("job_id"), list)
         })
-        gekozen_functie = st.selectbox("Selecteer functie", options=alle_functies)
+
+        col_l, col_r = st.columns(2)
+        gekozen_label = col_l.selectbox("Klantsegment (label)", options=alle_labels)
+        gekozen_functie = col_r.selectbox("Personeelsfunctie", options=alle_functies)
 
         totaal_werknemers = len(werknemers_raw)
         aantal_functie = sum(
@@ -661,7 +670,6 @@ with tab9:
             if isinstance(e.get("job_id"), list) and e["job_id"][1] == gekozen_functie
         )
         ratio = aantal_functie / totaal_werknemers if totaal_werknemers > 0 else 0
-
         st.caption(f"{aantal_functie} van {totaal_werknemers} werknemers = **{ratio*100:.1f}%** van totale loonskost")
 
         # Maandelijkse loonkost enkel uit "Te betalen Lonen" (niet bezoldigingen vennoten)
@@ -677,28 +685,33 @@ with tab9:
         loon_maand["Personeelskost (€)"] = loon_maand["debit"] * ratio
         loon_maand = loon_maand[["maand", "Personeelskost (€)"]].rename(columns={"maand": "Maand"})
 
-        # Omzet Hinkelspelwinkels per maand
-        hinkel_df = (
-            df[df["partner_name"].str.contains("Hinkelspel", case=False, na=False)]
-            .groupby("maand")["omzet"].sum()
+        # Omzet voor gekozen klantsegment
+        df_segment = df_labels[df_labels["klant_label"].apply(lambda ls: gekozen_label in ls)]
+        omzet_segment = (
+            df_segment.groupby("maand")["omzet"].sum()
             .reset_index()
             .rename(columns={"maand": "Maand", "omzet": "Omzet (€)"})
         )
 
-        vergelijk_df = loon_maand.merge(hinkel_df, on="Maand", how="outer").fillna(0).sort_values("Maand")
+        vergelijk_df = loon_maand.merge(omzet_segment, on="Maand", how="outer").fillna(0).sort_values("Maand")
         vergelijk_df["Marge (€)"] = vergelijk_df["Omzet (€)"] - vergelijk_df["Personeelskost (€)"]
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Totale omzet Hinkelspelwinkels", f"€ {vergelijk_df['Omzet (€)'].sum():,.0f}")
-        c2.metric(f"Netto loonskost {gekozen_functie}", f"€ {vergelijk_df['Personeelskost (€)'].sum():,.0f}")
-        c3.metric("Marge", f"€ {vergelijk_df['Marge (€)'].sum():,.0f}")
+        totaal_omzet = vergelijk_df["Omzet (€)"].sum()
+        totaal_kost = vergelijk_df["Personeelskost (€)"].sum()
+        totaal_marge = vergelijk_df["Marge (€)"].sum()
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric(f"Omzet {gekozen_label}", f"€ {totaal_omzet:,.0f}")
+        c2.metric(f"Loonskost {gekozen_functie}", f"€ {totaal_kost:,.0f}")
+        c3.metric("Marge", f"€ {totaal_marge:,.0f}")
+        c4.metric("Rendabiliteit", f"{totaal_marge / totaal_omzet * 100:.1f}%" if totaal_omzet else "—")
 
         st.plotly_chart(
             px.bar(
                 vergelijk_df.melt(id_vars="Maand", value_vars=["Omzet (€)", "Personeelskost (€)", "Marge (€)"]),
                 x="Maand", y="value", color="variable", barmode="group",
                 labels={"value": "Bedrag (€)", "variable": "", "Maand": "Maand"},
-                title=f"Omzet Hinkelspelwinkels vs. netto loonskost {gekozen_functie}",
+                title=f"Omzet {gekozen_label} vs. loonskost {gekozen_functie}",
             ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
             use_container_width=True,
         )
@@ -708,12 +721,16 @@ with tab9:
             detail_df["Kost/Omzet (%)"] = detail_df.apply(
                 lambda r: r["Personeelskost (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] != 0 else 0, axis=1
             )
+            detail_df["Rendabiliteit (%)"] = detail_df.apply(
+                lambda r: r["Marge (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] != 0 else 0, axis=1
+            )
             st.dataframe(
                 detail_df.style.format({
                     "Omzet (€)": "€ {:,.0f}",
                     "Personeelskost (€)": "€ {:,.0f}",
                     "Marge (€)": "€ {:,.0f}",
                     "Kost/Omzet (%)": "{:.1f}%",
+                    "Rendabiliteit (%)": "{:.1f}%",
                 }),
                 use_container_width=True, hide_index=True,
             )
