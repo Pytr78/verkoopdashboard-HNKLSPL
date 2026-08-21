@@ -138,7 +138,7 @@ def fetch_employees() -> list:
         ODOO_DB, uid, ODOO_PASSWORD,
         "hr.employee", "search_read",
         [[["active", "=", True]]],
-        {"fields": ["id", "name", "job_id", "job_title", "department_id"]}
+        {"fields": ["id", "name", "job_id", "job_title", "department_id", "address_home_id"]}
     )
 
 
