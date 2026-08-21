@@ -445,6 +445,24 @@ with tab8:
     df_labels["labels"] = df_labels["labels"].apply(
         lambda xs: [x[len("klant:"):].strip() for x in xs if x.lower().startswith("klant:")]
     )
+
+    klanten_zonder_label = (
+        df_labels[df_labels["labels"].apply(lambda x: len(x) == 0)]
+        .groupby("partner_name")
+        .agg(omzet=("omzet", "sum"), email=("email", "first"))
+        .reset_index()
+        .sort_values("omzet", ascending=False)
+        .rename(columns={"partner_name": "Klant", "omzet": "Omzet (€)", "email": "E-mail"})
+    )
+    if not klanten_zonder_label.empty:
+        with st.expander(f"⚠️ {len(klanten_zonder_label)} klanten zonder 'klant:'-label", expanded=True):
+            st.caption("Deze klanten hebben geen label dat begint met 'klant:' in Odoo.")
+            st.dataframe(
+                klanten_zonder_label.style.format({"Omzet (€)": "€ {:,.0f}"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+
     df_labels = df_labels[df_labels["labels"].apply(lambda x: len(x) > 0)]
 
     if df_labels.empty:
