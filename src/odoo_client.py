@@ -134,7 +134,7 @@ def fetch_personeelskosten() -> list:
             ODOO_DB, uid, ODOO_PASSWORD,
             "account.move", "search_read",
             [[["id", "in", move_ids]]],
-            {"fields": ["id", "ref", "narration", "payment_ref"]}
+            {"fields": ["id", "ref", "narration"]}
         )
         move_ref = {m["id"]: m for m in moves}
         for line in lines:
@@ -142,7 +142,7 @@ def fetch_personeelskosten() -> list:
             if move_id and move_id in move_ref:
                 line["move_ref"] = move_ref[move_id].get("ref") or ""
                 line["move_narration"] = move_ref[move_id].get("narration") or ""
-                line["move_payment_ref"] = move_ref[move_id].get("payment_ref") or ""
+                line["move_payment_ref"] = ""
             else:
                 line["move_ref"] = ""
                 line["move_narration"] = ""
