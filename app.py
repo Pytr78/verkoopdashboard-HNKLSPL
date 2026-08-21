@@ -680,15 +680,19 @@ with tab9:
         # Alle personeelskosten (lonen + bezoldigingen) voor individuele matching
         loon_df_all = pd.DataFrame(loon_raw)
         loon_df_all["partner_naam"] = loon_df_all["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
+        loon_df_all["omschrijving"] = loon_df_all["name"].fillna("")
         loon_df_all["maand"] = pd.to_datetime(loon_df_all["date"]).dt.to_period("M").astype(str)
 
-        alle_bank_namen = loon_df_all["partner_naam"].tolist()
+        def zoektekst(rij):
+            return f"{rij['partner_naam']} {rij['omschrijving']}"
+
+        alle_bank_namen = loon_df_all.apply(zoektekst, axis=1).tolist()
 
         def gevonden_in_bank(werknemer_naam):
             return any(naam_match(werknemer_naam, b) for b in alle_bank_namen)
 
         def filter_rijen_werknemer(werknemer_naam):
-            return loon_df_all[loon_df_all["partner_naam"].apply(lambda b: naam_match(werknemer_naam, b))]
+            return loon_df_all[loon_df_all.apply(lambda r: naam_match(werknemer_naam, zoektekst(r)), axis=1)]
 
         loon_individueel = pd.concat([
             filter_rijen_werknemer(e["name"]) for e in werknemers_functie
@@ -709,9 +713,11 @@ with tab9:
                 pd.DataFrame(emp_rijen).style.format({"Totaal (€)": "€ {:,.0f}"}),
                 use_container_width=True, hide_index=True,
             )
-            st.caption("Alle namen in banktransacties:")
-            unieke_bank_namen = sorted({n for n in alle_bank_namen if n})
-            st.dataframe(pd.DataFrame({"Naam in bank": unieke_bank_namen}), use_container_width=True, hide_index=True)
+            st.caption("Alle tekst in banktransacties (partner + omschrijving):")
+            diagnose = loon_df_all[["maand", "partner_naam", "omschrijving", "debit"]].rename(columns={
+                "maand": "Maand", "partner_naam": "Partner", "omschrijving": "Omschrijving", "debit": "Bedrag (€)"
+            }).sort_values("Maand")
+            st.dataframe(diagnose.style.format({"Bedrag (€)": "€ {:,.0f}"}), use_container_width=True, hide_index=True)
 
         if not loon_individueel.empty:
             st.caption(f"✅ Individuele betalingen gevonden voor werknemers uit '{gekozen_functie}' in banktransacties.")
