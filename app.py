@@ -494,11 +494,39 @@ with tab8:
                 y="omzet",
                 text_auto=".3s",
                 labels={"label": "Label", "omzet": "Omzet (€)"},
-                title="Omzet per klantengroep",
+                title="Omzet per klantengroep (totaal)",
                 color="label",
             ).update_layout(showlegend=False).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
             use_container_width=True,
         )
+
+        omzet_per_label_jaar = (
+            df_exploded.groupby(["label", "jaar"])["omzet"]
+            .sum()
+            .reset_index()
+            .sort_values(["jaar", "label"])
+        )
+        omzet_per_label_jaar["jaar"] = omzet_per_label_jaar["jaar"].astype(str)
+        st.plotly_chart(
+            px.bar(
+                omzet_per_label_jaar,
+                x="jaar",
+                y="omzet",
+                color="label",
+                barmode="group",
+                text_auto=".3s",
+                labels={"jaar": "Jaar", "omzet": "Omzet (€)", "label": "Label"},
+                title="Omzet per label per jaar",
+            ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+            use_container_width=True,
+        )
+
+        with st.expander("Tabel omzet per label per jaar"):
+            pivot = omzet_per_label_jaar.pivot(index="label", columns="jaar", values="omzet").fillna(0)
+            st.dataframe(
+                pivot.style.format("€ {:,.0f}"),
+                use_container_width=True,
+            )
 
         st.subheader("Detail per label")
         geselecteerd_label = st.selectbox("Bekijk klanten van label", options=alle_labels)
