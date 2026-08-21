@@ -695,13 +695,21 @@ with tab9:
         ]).drop_duplicates(subset=["id"]) if werknemers_functie else pd.DataFrame()
 
         with st.expander(f"👤 Werknemers met functie '{gekozen_functie}'"):
-            emp_tabel = pd.DataFrame([{
-                "Werknemer": e["name"],
-                "Functie": e["job_id"][1] if isinstance(e.get("job_id"), list) else "",
-                "Gevonden in bank": "✅" if gevonden_in_bank(e["name"]) else "❌",
-            } for e in werknemers_functie])
-            st.dataframe(emp_tabel, use_container_width=True, hide_index=True)
-            st.caption("Unieke namen in banktransacties (lonen):")
+            emp_rijen = []
+            for e in werknemers_functie:
+                matches = filter_rijen_werknemer(e["name"])
+                maanden = sorted(matches["maand"].unique()) if not matches.empty else []
+                emp_rijen.append({
+                    "Werknemer": e["name"],
+                    "Gevonden in bank": "✅" if maanden else "❌",
+                    "Maanden gevonden": ", ".join(maanden) if maanden else "—",
+                    "Totaal (€)": matches["debit"].sum() if not matches.empty else 0,
+                })
+            st.dataframe(
+                pd.DataFrame(emp_rijen).style.format({"Totaal (€)": "€ {:,.0f}"}),
+                use_container_width=True, hide_index=True,
+            )
+            st.caption("Alle namen in banktransacties:")
             unieke_bank_namen = sorted({n for n in alle_bank_namen if n})
             st.dataframe(pd.DataFrame({"Naam in bank": unieke_bank_namen}), use_container_width=True, hide_index=True)
 
