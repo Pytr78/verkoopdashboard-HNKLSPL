@@ -681,10 +681,11 @@ with tab9:
         loon_df_all = pd.DataFrame(loon_raw)
         loon_df_all["partner_naam"] = loon_df_all["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
         loon_df_all["omschrijving"] = loon_df_all["name"].fillna("")
+        loon_df_all["referentie"] = loon_df_all["ref"].fillna("")
         loon_df_all["maand"] = pd.to_datetime(loon_df_all["date"]).dt.to_period("M").astype(str)
 
         def zoektekst(rij):
-            return f"{rij['partner_naam']} {rij['omschrijving']}"
+            return f"{rij['partner_naam']} {rij['omschrijving']} {rij['referentie']}"
 
         alle_bank_namen = loon_df_all.apply(zoektekst, axis=1).tolist()
 
@@ -714,8 +715,9 @@ with tab9:
                 use_container_width=True, hide_index=True,
             )
             st.caption("Alle tekst in banktransacties (partner + omschrijving):")
-            diagnose = loon_df_all[["maand", "partner_naam", "omschrijving", "debit"]].rename(columns={
-                "maand": "Maand", "partner_naam": "Partner", "omschrijving": "Omschrijving", "debit": "Bedrag (€)"
+            diagnose = loon_df_all[["maand", "partner_naam", "omschrijving", "referentie", "debit"]].rename(columns={
+                "maand": "Maand", "partner_naam": "Partner", "omschrijving": "Omschrijving",
+                "referentie": "Referentie", "debit": "Bedrag (€)"
             }).sort_values("Maand")
             st.dataframe(diagnose.style.format({"Bedrag (€)": "€ {:,.0f}"}), use_container_width=True, hide_index=True)
 
