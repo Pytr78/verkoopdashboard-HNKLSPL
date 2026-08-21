@@ -1,7 +1,7 @@
 import pandas as pd
 
 
-def invoices_to_dataframe(invoices: list, partner_emails: dict = None) -> pd.DataFrame:
+def invoices_to_dataframe(invoices: list, partner_emails: dict = None, partner_labels: dict = None) -> pd.DataFrame:
     if not invoices:
         return pd.DataFrame()
 
@@ -15,12 +15,18 @@ def invoices_to_dataframe(invoices: list, partner_emails: dict = None) -> pd.Dat
         ).fillna("")
     else:
         df["email"] = ""
+    if partner_labels:
+        df["labels"] = df["commercial_partner_id_int"].map(partner_labels).fillna(
+            df["partner_id_int"].map(partner_labels)
+        ).apply(lambda x: x if isinstance(x, list) else [])
+    else:
+        df["labels"] = [[] for _ in range(len(df))]
     df["invoice_date"] = pd.to_datetime(df["invoice_date"])
     df["jaar"] = df["invoice_date"].dt.year
     df["maand"] = df["invoice_date"].dt.to_period("M").astype(str)
     df = df.rename(columns={"amount_untaxed": "omzet", "amount_residual": "openstaand"})
     df["invoice_date_due"] = pd.to_datetime(df["invoice_date_due"], errors="coerce")
-    return df[["id", "name", "partner_name", "email", "invoice_date", "invoice_date_due",
+    return df[["id", "name", "partner_name", "email", "labels", "invoice_date", "invoice_date_due",
                "jaar", "maand", "omzet", "openstaand", "payment_state",
                "partner_id_int", "commercial_partner_id_int"]]
 

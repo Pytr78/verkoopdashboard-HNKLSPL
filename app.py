@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import io
 import plotly.express as px
-from src.odoo_client import fetch_invoices, fetch_partner_emails, fetch_betaalde_facturen
+from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen
 from src.data_processing import invoices_to_dataframe, omzet_per_partner_per_maand, omzet_per_partner_totaal
 from src.charts import lijndiagram, staafdiagram
 from src.management_summary import bereken_samenvatting
@@ -53,8 +53,8 @@ def laad_data():
         ]
         if id is not None
     })
-    emails = fetch_partner_emails(partner_ids)
-    return invoices_to_dataframe(invoices, emails)
+    emails, labels = fetch_partner_info(partner_ids)
+    return invoices_to_dataframe(invoices, emails, labels)
 
 @st.cache_data(ttl=86400)
 def laad_betalingen():
@@ -107,7 +107,7 @@ col4.metric("Aantal facturen", len(df_gefilterd))
 st.divider()
 
 # --- Tabs ---
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "🚨 Actiepunten",
     "🎯 Doelstellingen",
     "📊 Grafieken",
@@ -115,6 +115,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "👥 Klantsegmentatie",
     "💳 Betalingsgedrag",
     "💰 Cashflow",
+    "🏷️ Segmentatie per label",
 ])
 
 # ── Tab 1: Actiepunten ──────────────────────────────────────────────────────
@@ -434,3 +435,62 @@ with tab7:
                 }).sort_values("Dagen").style.format({"Openstaand (€)": "€ {:,.0f}"}),
                 use_container_width=True,
             )
+
+# ── Tab 8: Segmentatie per label ────────────────────────────────────────────
+with tab8:
+    st.header("Segmentatie per label")
+    st.caption("Omzet per klantengroep op basis van Odoo-labels (winkelier, horeca, ...)")
+
+    df_labels = df_gefilterd.copy()
+    df_labels = df_labels[df_labels["labels"].apply(lambda x: len(x) > 0)]
+
+    if df_labels.empty:
+        st.info("Geen labels gevonden op de gefilterde klanten. Voeg labels toe aan klanten in Odoo.")
+    else:
+        df_exploded = df_labels.explode("labels").rename(columns={"labels": "label"})
+
+        alle_labels = sorted(df_exploded["label"].unique().tolist())
+        geselecteerde_labels = st.multiselect("Filter op label", options=alle_labels, default=alle_labels)
+        df_exploded = df_exploded[df_exploded["label"].isin(geselecteerde_labels)]
+
+        omzet_per_label = (
+            df_exploded.groupby("label")
+            .agg(omzet=("omzet", "sum"), klanten=("partner_name", "nunique"), facturen=("name", "count"))
+            .reset_index()
+            .sort_values("omzet", ascending=False)
+        )
+
+        cols = st.columns(min(len(omzet_per_label), 4))
+        for i, row in omzet_per_label.iterrows():
+            cols[i % len(cols)].metric(row["label"], f"€ {row['omzet']:,.0f}", f"{row['klanten']} klanten")
+
+        st.divider()
+
+        st.plotly_chart(
+            px.bar(
+                omzet_per_label,
+                x="label",
+                y="omzet",
+                text_auto=".3s",
+                labels={"label": "Label", "omzet": "Omzet (€)"},
+                title="Omzet per klantengroep",
+                color="label",
+            ).update_layout(showlegend=False).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+            use_container_width=True,
+        )
+
+        st.subheader("Detail per label")
+        geselecteerd_label = st.selectbox("Bekijk klanten van label", options=alle_labels)
+        df_label_detail = (
+            df_exploded[df_exploded["label"] == geselecteerd_label]
+            .groupby("partner_name")
+            .agg(omzet=("omzet", "sum"), facturen=("name", "count"), email=("email", "first"))
+            .reset_index()
+            .sort_values("omzet", ascending=False)
+            .rename(columns={"partner_name": "Klant", "omzet": "Omzet (€)", "facturen": "Facturen", "email": "E-mail"})
+        )
+        st.dataframe(
+            df_label_detail.style.format({"Omzet (€)": "€ {:,.0f}"}),
+            use_container_width=True,
+            hide_index=True,
+        )

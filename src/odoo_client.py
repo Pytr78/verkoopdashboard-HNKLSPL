@@ -68,7 +68,7 @@ def fetch_betaalde_facturen():
     return facturen
 
 
-def fetch_partner_emails(partner_ids: list) -> dict:
+def fetch_partner_info(partner_ids: list) -> tuple:
     uid = get_uid()
     models = get_models()
 
@@ -76,6 +76,28 @@ def fetch_partner_emails(partner_ids: list) -> dict:
         ODOO_DB, uid, ODOO_PASSWORD,
         "res.partner", "search_read",
         [[["id", "in", partner_ids]]],
-        {"fields": ["id", "name", "email"]}
+        {"fields": ["id", "name", "email", "category_id"]}
     )
-    return {p["id"]: p.get("email") or "" for p in partners}
+    emails = {p["id"]: p.get("email") or "" for p in partners}
+
+    all_cat_ids = list({cat_id for p in partners for cat_id in p.get("category_id", [])})
+    cat_names = {}
+    if all_cat_ids:
+        cats = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            "res.partner.category", "search_read",
+            [[["id", "in", all_cat_ids]]],
+            {"fields": ["id", "name"]}
+        )
+        cat_names = {c["id"]: c["name"] for c in cats}
+
+    labels = {
+        p["id"]: [cat_names[cid] for cid in p.get("category_id", []) if cid in cat_names]
+        for p in partners
+    }
+    return emails, labels
+
+
+def fetch_partner_emails(partner_ids: list) -> dict:
+    emails, _ = fetch_partner_info(partner_ids)
+    return emails
