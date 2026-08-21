@@ -667,29 +667,46 @@ with tab9:
                 "Afdeling": e["department_id"][1] if isinstance(e.get("department_id"), list) else "",
             } for e in werknemers_functie]), use_container_width=True, hide_index=True)
 
-        # Enkel effectieve betalingen: op passiefrekening zijn debits de uitgaande betalingen, credits de accruals
-        loon_personeel = [r for r in loon_raw if (r.get("debit") or 0) > 0]
+        def _move_naam(r) -> str:
+            return r["move_id"][1] if isinstance(r.get("move_id"), list) else ""
+
+        def _alle_tekst(r) -> str:
+            return " ".join((_move_naam(r), r.get("name", "") or "", r.get("ref", "") or "")).lower()
+
+        # Bezoldigingen en voorschotten: zoek op /A/Bezoldiging en /A/Voorschot in move/omschrijving/ref
+        # Lonen: debit > 0 met MM/YYYY in de tekst
+        def _is_loonbetaling(r) -> bool:
+            tekst = _alle_tekst(r)
+            if "/a/bezoldiging" in tekst or "/a/voorschot" in tekst:
+                return True
+            if (r.get("debit") or 0) > 0 and re.search(r'\b\d{2}/\d{4}\b', tekst):
+                return True
+            return False
+
+        loon_personeel = [r for r in loon_raw if _is_loonbetaling(r)]
 
         def _periode_uit_omschrijving(rij) -> str:
-            for veld in (rij.get("name", "") or "", rij.get("ref", "") or ""):
+            move_naam = _move_naam(rij)
+            for veld in (move_naam, rij.get("name", "") or "", rij.get("ref", "") or ""):
                 m = re.search(r'\b(\d{2})/(\d{4})\b', veld)
                 if m:
                     return f"{m.group(2)}-{m.group(1)}"
             return pd.to_datetime(rij["date"]).strftime("%Y-%m")
 
         loon_df = pd.DataFrame(loon_personeel)
+        loon_df["move_naam"] = loon_df.apply(_move_naam, axis=1)
         loon_df["maand"] = loon_df.apply(_periode_uit_omschrijving, axis=1)
         loon_df["betaaldatum_maand"] = pd.to_datetime(loon_df["date"]).dt.strftime("%Y-%m")
 
         with st.expander(f"🔍 Diagnostiek: {len(loon_raw)} rijen opgehaald, {len(loon_personeel)} na filtering"):
-            diag_df = loon_df[["date", "betaaldatum_maand", "maand", "name", "ref",
+            diag_df = loon_df[["date", "betaaldatum_maand", "maand", "move_naam", "name", "ref",
                                 "partner_id", "account_id", "journal_id", "debit"]].copy()
             diag_df["Partner"] = diag_df["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
             diag_df["Rekening"] = diag_df["account_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
             diag_df["Journaal"] = diag_df["journal_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
             st.dataframe(
-                diag_df[["date", "betaaldatum_maand", "maand", "Journaal", "Partner", "Rekening", "name", "ref", "debit"]]
-                .rename(columns={"date": "Datum", "betaaldatum_maand": "Maand (datum)",
+                diag_df[["date", "betaaldatum_maand", "maand", "move_naam", "Journaal", "Partner", "Rekening", "name", "ref", "debit"]]
+                .rename(columns={"date": "Datum", "betaaldatum_maand": "Maand (datum)", "move_naam": "Move",
                                  "maand": "Maand (omschrijving)", "name": "Omschrijving",
                                  "ref": "Referentie", "debit": "Bedrag (€)"})
                 .sort_values("Datum")
