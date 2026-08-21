@@ -691,7 +691,7 @@ with tab9:
 
         loon_individueel = pd.concat([
             filter_rijen_werknemer(e["name"]) for e in werknemers_functie
-        ]).drop_duplicates() if werknemers_functie else pd.DataFrame()
+        ]).drop_duplicates(subset=["id"]) if werknemers_functie else pd.DataFrame()
 
         with st.expander(f"👤 Werknemers met functie '{gekozen_functie}'"):
             emp_tabel = pd.DataFrame([{
