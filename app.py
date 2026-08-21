@@ -669,9 +669,13 @@ with tab9:
             e for e in werknemers_raw
             if isinstance(e.get("job_id"), list) and e["job_id"][1] == gekozen_functie
         ]
+        TUSSENWOORDEN = {"van", "de", "den", "der", "ter", "ten", "het", "een", "d"}
+
         def naam_match(werknemer_naam: str, bank_naam: str) -> bool:
-            delen = set(werknemer_naam.lower().split())
-            return delen and delen.issubset(set(bank_naam.lower().split()))
+            # Vergelijk enkel de betekenisvolle naamsdelen (geen tussenwoorden)
+            delen = {w for w in werknemer_naam.lower().split() if w not in TUSSENWOORDEN}
+            bank_delen = set(bank_naam.lower().split())
+            return bool(delen) and delen.issubset(bank_delen)
 
         # Loonkost uit "Te betalen Lonen"
         loon_personeel = [r for r in loon_raw if "bezoldiging" not in (
@@ -700,6 +704,9 @@ with tab9:
                 "Gevonden in bank": "✅" if gevonden_in_bank(e["name"]) else "❌",
             } for e in werknemers_functie])
             st.dataframe(emp_tabel, use_container_width=True, hide_index=True)
+            st.caption("Unieke namen in banktransacties (lonen):")
+            unieke_bank_namen = sorted({n for n in alle_bank_namen if n})
+            st.dataframe(pd.DataFrame({"Naam in bank": unieke_bank_namen}), use_container_width=True, hide_index=True)
 
         if not loon_individueel.empty:
             st.caption(f"✅ Individuele betalingen gevonden voor werknemers uit '{gekozen_functie}' in banktransacties.")
