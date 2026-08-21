@@ -442,10 +442,13 @@ with tab8:
     st.caption("Omzet per klantengroep op basis van Odoo-labels (winkelier, horeca, ...)")
 
     df_labels = df_gefilterd.copy()
+    df_labels["labels"] = df_labels["labels"].apply(
+        lambda xs: [x[len("klant:"):].strip() for x in xs if x.lower().startswith("klant:")]
+    )
     df_labels = df_labels[df_labels["labels"].apply(lambda x: len(x) > 0)]
 
     if df_labels.empty:
-        st.info("Geen labels gevonden op de gefilterde klanten. Voeg labels toe aan klanten in Odoo.")
+        st.info("Geen 'klant:'-labels gevonden op de gefilterde klanten. Voeg labels toe in Odoo die beginnen met 'klant:'.")
     else:
         df_exploded = df_labels.explode("labels").rename(columns={"labels": "label"})
 
