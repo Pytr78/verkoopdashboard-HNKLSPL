@@ -669,25 +669,35 @@ with tab9:
             e for e in werknemers_raw
             if isinstance(e.get("job_id"), list) and e["job_id"][1] == gekozen_functie
         ]
-        namen_functie = {e["name"].lower() for e in werknemers_functie}
+        def naam_match(werknemer_naam: str, bank_naam: str) -> bool:
+            delen = set(werknemer_naam.lower().split())
+            return delen and delen.issubset(set(bank_naam.lower().split()))
 
         # Loonkost uit "Te betalen Lonen"
         loon_personeel = [r for r in loon_raw if "bezoldiging" not in (
             r["account_id"][1] if isinstance(r.get("account_id"), list) else ""
         ).lower()]
         loon_df_all = pd.DataFrame(loon_personeel)
-        loon_df_all["partner_naam"] = loon_df_all["partner_id"].apply(lambda x: x[1].lower() if isinstance(x, list) else "")
+        loon_df_all["partner_naam"] = loon_df_all["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
         loon_df_all["maand"] = pd.to_datetime(loon_df_all["date"]).dt.to_period("M").astype(str)
 
-        loon_individueel = loon_df_all[loon_df_all["partner_naam"].isin(namen_functie)]
+        alle_bank_namen = loon_df_all["partner_naam"].tolist()
+
+        def gevonden_in_bank(werknemer_naam):
+            return any(naam_match(werknemer_naam, b) for b in alle_bank_namen)
+
+        def filter_rijen_werknemer(werknemer_naam):
+            return loon_df_all[loon_df_all["partner_naam"].apply(lambda b: naam_match(werknemer_naam, b))]
+
+        loon_individueel = pd.concat([
+            filter_rijen_werknemer(e["name"]) for e in werknemers_functie
+        ]).drop_duplicates() if werknemers_functie else pd.DataFrame()
 
         with st.expander(f"👤 Werknemers met functie '{gekozen_functie}'"):
             emp_tabel = pd.DataFrame([{
                 "Werknemer": e["name"],
                 "Functie": e["job_id"][1] if isinstance(e.get("job_id"), list) else "",
-                "Gevonden in bank": "✅" if e["name"].lower() in {
-                    r["partner_naam"] for _, r in loon_df_all.iterrows()
-                } else "❌",
+                "Gevonden in bank": "✅" if gevonden_in_bank(e["name"]) else "❌",
             } for e in werknemers_functie])
             st.dataframe(emp_tabel, use_container_width=True, hide_index=True)
 
