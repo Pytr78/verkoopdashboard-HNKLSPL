@@ -704,11 +704,16 @@ with tab9:
         )
 
         with st.expander("Detail per maand"):
+            detail_df = vergelijk_df.copy()
+            detail_df["Marge (%)"] = detail_df.apply(
+                lambda r: r["Marge (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] != 0 else 0, axis=1
+            )
             st.dataframe(
-                vergelijk_df.style.format({
+                detail_df.style.format({
                     "Omzet (€)": "€ {:,.0f}",
                     "Personeelskost (€)": "€ {:,.0f}",
                     "Marge (€)": "€ {:,.0f}",
+                    "Marge (%)": "{:.1f}%",
                 }),
                 use_container_width=True, hide_index=True,
             )
