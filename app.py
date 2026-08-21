@@ -667,8 +667,6 @@ with tab9:
                 "Afdeling": e["department_id"][1] if isinstance(e.get("department_id"), list) else "",
             } for e in werknemers_functie]), use_container_width=True, hide_index=True)
 
-        namen_functie = [e["name"] for e in werknemers_functie]
-
         # Loonkost enkel uit "te betalen lonen" (niet bezoldigingen)
         loon_personeel = [r for r in loon_raw if "bezoldiging" not in (
             r["account_id"][1] if isinstance(r.get("account_id"), list) else ""
@@ -681,25 +679,9 @@ with tab9:
                     return f"{m.group(2)}-{m.group(1)}"
             return pd.to_datetime(rij["date"]).strftime("%Y-%m")
 
-        def _gevonden_werknemer(rij) -> str:
-            partner_naam = rij["partner_id"][1] if isinstance(rij.get("partner_id"), list) else ""
-            velden = " ".join((partner_naam, rij.get("name", "") or "", rij.get("ref", "") or "")).lower()
-            for naam in namen_functie:
-                woorden = {w for w in naam.lower().split() if len(w) > 2}
-                if woorden and all(w in velden for w in woorden):
-                    return naam
-            return ""
-
         loon_df = pd.DataFrame(loon_personeel)
         loon_df["maand"] = loon_df.apply(_periode_uit_omschrijving, axis=1)
-        loon_df["werknemer"] = loon_df.apply(_gevonden_werknemer, axis=1)
-        loon_df_functie = loon_df[loon_df["werknemer"] != ""]
-
-        niet_gevonden = [n for n in namen_functie if n not in set(loon_df_functie["werknemer"])]
-        if niet_gevonden:
-            st.warning(f"Niet gevonden in banktransacties: {', '.join(niet_gevonden)}")
-
-        loon_maand = loon_df_functie.groupby("maand")["debit"].sum().reset_index()
+        loon_maand = loon_df.groupby("maand")["debit"].sum().reset_index()
         loon_maand["Personeelskost (€)"] = loon_maand["debit"]
         loon_maand = loon_maand[["maand", "Personeelskost (€)"]].rename(columns={"maand": "Maand"})
 
@@ -759,8 +741,8 @@ with tab9:
                 gekozen_maand = detail_df.iloc[gekozen_rijen[0]]["Maand"]
                 st.markdown(f"### Bankverrichtingen — {gekozen_maand}")
 
-                # Loonbetalingen voor die maand gefilterd op werknemers van de functie
-                loon_detail = loon_df_functie[loon_df_functie["maand"] == gekozen_maand].copy()
+                # Alle "te betalen lonen" transacties voor die maand
+                loon_detail = loon_df[loon_df["maand"] == gekozen_maand].copy()
                 if not loon_detail.empty:
                     loon_detail["Partner"] = loon_detail["partner_id"].apply(
                         lambda x: x[1] if isinstance(x, list) else "—"
@@ -769,10 +751,10 @@ with tab9:
                         lambda x: x[1] if isinstance(x, list) else "—"
                     )
                     totaal = loon_detail["debit"].sum()
-                    st.caption(f"Netto loonkost {gekozen_functie}: **€ {totaal:,.0f}**")
+                    st.caption(f"Totale loonbetalingen: **€ {totaal:,.0f}**")
                     st.dataframe(
-                        loon_detail[["date", "werknemer", "Partner", "Rekening", "name", "ref", "debit"]].rename(
-                            columns={"date": "Datum", "werknemer": "Werknemer", "name": "Omschrijving",
+                        loon_detail[["date", "Partner", "Rekening", "name", "ref", "debit"]].rename(
+                            columns={"date": "Datum", "name": "Omschrijving",
                                      "ref": "Referentie", "debit": "Bedrag (€)"}
                         ).style.format({"Bedrag (€)": "€ {:,.0f}"}),
                         use_container_width=True, hide_index=True,
