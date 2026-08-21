@@ -667,10 +667,18 @@ with tab9:
                 "Afdeling": e["department_id"][1] if isinstance(e.get("department_id"), list) else "",
             } for e in werknemers_functie]), use_container_width=True, hide_index=True)
 
-        # Loonkost enkel uit "te betalen lonen" (niet bezoldigingen)
-        loon_personeel = [r for r in loon_raw if "bezoldiging" not in (
-            r["account_id"][1] if isinstance(r.get("account_id"), list) else ""
-        ).lower()]
+        # Loonkost enkel uit "te betalen lonen" (niet bezoldigingen, geen advances & recoveries)
+        def _uitsluiten(r) -> bool:
+            rekening = (r["account_id"][1] if isinstance(r.get("account_id"), list) else "").lower()
+            partner = (r["partner_id"][1] if isinstance(r.get("partner_id"), list) else "").lower()
+            tekst = " ".join((r.get("name", "") or "", r.get("ref", "") or "")).lower()
+            if "bezoldiging" in rekening:
+                return True
+            if "advances" in partner or "recoveries" in partner or "advances" in tekst or "recoveries" in tekst:
+                return True
+            return False
+
+        loon_personeel = [r for r in loon_raw if not _uitsluiten(r)]
 
         def _periode_uit_omschrijving(rij) -> str:
             for veld in (rij.get("name", "") or "", rij.get("ref", "") or ""):
