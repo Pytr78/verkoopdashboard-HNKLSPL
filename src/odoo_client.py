@@ -107,10 +107,12 @@ def fetch_personeelskosten() -> list:
     uid = get_uid()
     models = get_models()
 
+    lonen = "te betalen lonen"
+    bezoldigingen = "te betalen bezoldigingen"
     accounts = models.execute_kw(
         ODOO_DB, uid, ODOO_PASSWORD,
         "account.account", "search_read",
-        [[["name", "ilike", "te betalen lonen"], "|", ["name", "ilike", "te betalen bezoldigingen"]]],
+        [["|", ["name", "ilike", lonen], ["name", "ilike", bezoldigingen]]],
         {"fields": ["id", "name", "code"]}
     )
     if not accounts:
