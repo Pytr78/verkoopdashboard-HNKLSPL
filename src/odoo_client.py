@@ -126,6 +126,28 @@ def fetch_personeelskosten() -> list:
         ]],
         {"fields": ["id", "date", "name", "ref", "partner_id", "debit", "credit", "account_id", "move_id", "journal_id"]}
     )
+
+    # Haal ook de ref van de parent move op (bevat bankcommmunicatie)
+    move_ids = list({l["move_id"][0] for l in lines if isinstance(l.get("move_id"), list)})
+    if move_ids:
+        moves = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            "account.move", "search_read",
+            [[["id", "in", move_ids]]],
+            {"fields": ["id", "ref", "narration", "payment_ref"]}
+        )
+        move_ref = {m["id"]: m for m in moves}
+        for line in lines:
+            move_id = line["move_id"][0] if isinstance(line.get("move_id"), list) else None
+            if move_id and move_id in move_ref:
+                line["move_ref"] = move_ref[move_id].get("ref") or ""
+                line["move_narration"] = move_ref[move_id].get("narration") or ""
+                line["move_payment_ref"] = move_ref[move_id].get("payment_ref") or ""
+            else:
+                line["move_ref"] = ""
+                line["move_narration"] = ""
+                line["move_payment_ref"] = ""
+
     return lines
 
 

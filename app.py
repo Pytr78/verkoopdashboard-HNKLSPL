@@ -671,10 +671,12 @@ with tab9:
             return r["move_id"][1] if isinstance(r.get("move_id"), list) else ""
 
         def _alle_tekst(r) -> str:
-            return " ".join((_move_naam(r), r.get("name", "") or "", r.get("ref", "") or "")).lower()
+            return " ".join((
+                _move_naam(r), r.get("name", "") or "", r.get("ref", "") or "",
+                r.get("move_ref", "") or "", r.get("move_narration", "") or "",
+                r.get("move_payment_ref", "") or "",
+            )).lower()
 
-        # Bezoldigingen en voorschotten: zoek op /A/Bezoldiging en /A/Voorschot in move/omschrijving/ref
-        # Lonen: debit > 0 met MM/YYYY in de tekst
         # Enkel rekening "Te betalen Lonen" (niet bezoldiging), debit > 0
         loon_personeel = [
             r for r in loon_raw
@@ -683,8 +685,12 @@ with tab9:
         ]
 
         def _periode_uit_omschrijving(rij) -> str:
-            move_naam = _move_naam(rij)
-            for veld in (move_naam, rij.get("name", "") or "", rij.get("ref", "") or ""):
+            velden = (
+                _move_naam(rij), rij.get("name", "") or "", rij.get("ref", "") or "",
+                rij.get("move_ref", "") or "", rij.get("move_narration", "") or "",
+                rij.get("move_payment_ref", "") or "",
+            )
+            for veld in velden:
                 m = re.search(r'\b(\d{2})/(\d{4})\b', veld)
                 if m:
                     return f"{m.group(2)}-{m.group(1)}"
@@ -697,13 +703,15 @@ with tab9:
 
         with st.expander(f"🔍 Diagnostiek: {len(loon_raw)} rijen opgehaald, {len(loon_personeel)} na filtering"):
             diag_df = loon_df[["date", "betaaldatum_maand", "maand", "move_naam", "name", "ref",
-                                "partner_id", "account_id", "journal_id", "debit"]].copy()
+                                "move_ref", "move_payment_ref", "partner_id", "account_id", "journal_id", "debit"]].copy()
             diag_df["Partner"] = diag_df["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
             diag_df["Rekening"] = diag_df["account_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
             diag_df["Journaal"] = diag_df["journal_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
             st.dataframe(
-                diag_df[["date", "betaaldatum_maand", "maand", "move_naam", "Journaal", "Partner", "Rekening", "name", "ref", "debit"]]
+                diag_df[["date", "betaaldatum_maand", "maand", "move_naam", "move_ref", "move_payment_ref",
+                          "Journaal", "Partner", "Rekening", "name", "ref", "debit"]]
                 .rename(columns={"date": "Datum", "betaaldatum_maand": "Maand (datum)", "move_naam": "Move",
+                                 "move_ref": "Move Ref", "move_payment_ref": "Bankcommunicatie",
                                  "maand": "Maand (omschrijving)", "name": "Omschrijving",
                                  "ref": "Referentie", "debit": "Bedrag (€)"})
                 .sort_values("Datum")
