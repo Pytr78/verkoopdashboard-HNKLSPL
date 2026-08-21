@@ -7,8 +7,10 @@ def invoices_to_dataframe(invoices: list, partner_emails: dict = None, partner_l
 
     df = pd.DataFrame(invoices)
     df["partner_id_int"] = df["partner_id"].apply(lambda x: x[0] if isinstance(x, list) else x)
-    df["partner_name"] = df["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else x)
     df["commercial_partner_id_int"] = df["commercial_partner_id"].apply(lambda x: x[0] if isinstance(x, list) else x)
+    df["partner_name"] = df["commercial_partner_id"].apply(
+        lambda x: x[1] if isinstance(x, list) else None
+    ).fillna(df["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else x))
     if partner_emails:
         df["email"] = df["commercial_partner_id_int"].map(partner_emails).fillna(
             df["partner_id_int"].map(partner_emails)
