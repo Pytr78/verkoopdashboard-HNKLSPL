@@ -669,32 +669,30 @@ with tab9:
             e for e in werknemers_raw
             if isinstance(e.get("job_id"), list) and e["job_id"][1] == gekozen_functie
         ]
-        partner_ids_functie = {
-            e["address_home_id"][0]
-            for e in werknemers_functie
-            if isinstance(e.get("address_home_id"), list)
-        }
+        namen_functie = {e["name"].lower() for e in werknemers_functie}
+
+        # Loonkost uit "Te betalen Lonen"
+        loon_personeel = [r for r in loon_raw if "bezoldiging" not in (
+            r["account_id"][1] if isinstance(r.get("account_id"), list) else ""
+        ).lower()]
+        loon_df_all = pd.DataFrame(loon_personeel)
+        loon_df_all["partner_naam"] = loon_df_all["partner_id"].apply(lambda x: x[1].lower() if isinstance(x, list) else "")
+        loon_df_all["maand"] = pd.to_datetime(loon_df_all["date"]).dt.to_period("M").astype(str)
+
+        loon_individueel = loon_df_all[loon_df_all["partner_naam"].isin(namen_functie)]
 
         with st.expander(f"👤 Werknemers met functie '{gekozen_functie}'"):
             emp_tabel = pd.DataFrame([{
                 "Werknemer": e["name"],
                 "Functie": e["job_id"][1] if isinstance(e.get("job_id"), list) else "",
-                "Gelinkt aan bank": "✅" if isinstance(e.get("address_home_id"), list) else "❌ geen partnerlink",
+                "Gevonden in bank": "✅" if e["name"].lower() in {
+                    r["partner_naam"] for _, r in loon_df_all.iterrows()
+                } else "❌",
             } for e in werknemers_functie])
             st.dataframe(emp_tabel, use_container_width=True, hide_index=True)
 
-        # Loonkost: individueel via partner_id indien beschikbaar, anders verdeelsleutel
-        loon_personeel = [r for r in loon_raw if "bezoldiging" not in (
-            r["account_id"][1] if isinstance(r.get("account_id"), list) else ""
-        ).lower()]
-        loon_df_all = pd.DataFrame(loon_personeel)
-        loon_df_all["partner_id_int"] = loon_df_all["partner_id"].apply(lambda x: x[0] if isinstance(x, list) else None)
-        loon_df_all["maand"] = pd.to_datetime(loon_df_all["date"]).dt.to_period("M").astype(str)
-
-        loon_individueel = loon_df_all[loon_df_all["partner_id_int"].isin(partner_ids_functie)] if partner_ids_functie else pd.DataFrame()
-
         if not loon_individueel.empty:
-            st.caption(f"✅ Individuele betalingen gevonden voor {len(partner_ids_functie)} werknemer(s) in banktransacties.")
+            st.caption(f"✅ Individuele betalingen gevonden voor werknemers uit '{gekozen_functie}' in banktransacties.")
             loon_maand = (
                 loon_individueel.groupby("maand")["debit"].sum()
                 .reset_index()
@@ -703,11 +701,8 @@ with tab9:
         else:
             totaal_werknemers = len(werknemers_raw)
             ratio = len(werknemers_functie) / totaal_werknemers if totaal_werknemers > 0 else 0
-            st.caption(f"⚠️ Geen individuele betalingen gevonden in bank — verdeelsleutel gebruikt: {len(werknemers_functie)}/{totaal_werknemers} = **{ratio*100:.1f}%**")
-            loon_maand = (
-                loon_df_all.groupby("maand")["debit"].sum()
-                .reset_index()
-            )
+            st.caption(f"⚠️ Geen individuele betalingen op naam gevonden — verdeelsleutel: {len(werknemers_functie)}/{totaal_werknemers} = **{ratio*100:.1f}%**")
+            loon_maand = loon_df_all.groupby("maand")["debit"].sum().reset_index()
             loon_maand["Personeelskost (€)"] = loon_maand["debit"] * ratio
             loon_maand = loon_maand[["maand", "Personeelskost (€)"]].rename(columns={"maand": "Maand"})
 
