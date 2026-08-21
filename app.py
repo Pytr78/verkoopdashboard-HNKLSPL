@@ -645,7 +645,7 @@ with tab9:
 
     st.divider()
     st.subheader("Rendabiliteit winkelpersoneel vs. Hinkelspelwinkels")
-    st.caption("Personeelskost = netto loon uit banktransacties, verdeeld naar aandeel van de geselecteerde functie in het totaal personeelsbestand")
+    st.caption("Personeelskost = netto loon uit banktransacties, opgeteld per werknemer van de geselecteerde functie")
 
     if not loon_raw or not werknemers_raw:
         st.info("Loondata of werknemersdata ontbreekt.")
@@ -667,10 +667,7 @@ with tab9:
                 "Afdeling": e["department_id"][1] if isinstance(e.get("department_id"), list) else "",
             } for e in werknemers_functie]), use_container_width=True, hide_index=True)
 
-        # Verdeelsleutel: aandeel van functie in totaal personeelsbestand
-        totaal_werknemers = len(werknemers_raw)
-        ratio = len(werknemers_functie) / totaal_werknemers if totaal_werknemers > 0 else 0
-        st.caption(f"{len(werknemers_functie)} van {totaal_werknemers} werknemers = **{ratio*100:.1f}%** van totale loonskost")
+        namen_functie = [e["name"] for e in werknemers_functie]
 
         # Loonkost enkel uit "te betalen lonen" (niet bezoldigingen)
         loon_personeel = [r for r in loon_raw if "bezoldiging" not in (
@@ -678,17 +675,32 @@ with tab9:
         ).lower()]
 
         def _periode_uit_omschrijving(rij) -> str:
-            # Zoek MM/YYYY in omschrijving of referentie; val terug op betaaldatum
             for veld in (rij.get("name", "") or "", rij.get("ref", "") or ""):
                 m = re.search(r'\b(\d{2})/(\d{4})\b', veld)
                 if m:
                     return f"{m.group(2)}-{m.group(1)}"
             return pd.to_datetime(rij["date"]).strftime("%Y-%m")
 
+        def _gevonden_werknemer(rij) -> str:
+            partner_naam = rij["partner_id"][1] if isinstance(rij.get("partner_id"), list) else ""
+            velden = " ".join((partner_naam, rij.get("name", "") or "", rij.get("ref", "") or "")).lower()
+            for naam in namen_functie:
+                woorden = {w for w in naam.lower().split() if len(w) > 2}
+                if woorden and all(w in velden for w in woorden):
+                    return naam
+            return ""
+
         loon_df = pd.DataFrame(loon_personeel)
         loon_df["maand"] = loon_df.apply(_periode_uit_omschrijving, axis=1)
-        loon_maand = loon_df.groupby("maand")["debit"].sum().reset_index()
-        loon_maand["Personeelskost (€)"] = loon_maand["debit"] * ratio
+        loon_df["werknemer"] = loon_df.apply(_gevonden_werknemer, axis=1)
+        loon_df_functie = loon_df[loon_df["werknemer"] != ""]
+
+        niet_gevonden = [n for n in namen_functie if n not in set(loon_df_functie["werknemer"])]
+        if niet_gevonden:
+            st.warning(f"Niet gevonden in banktransacties: {', '.join(niet_gevonden)}")
+
+        loon_maand = loon_df_functie.groupby("maand")["debit"].sum().reset_index()
+        loon_maand["Personeelskost (€)"] = loon_maand["debit"]
         loon_maand = loon_maand[["maand", "Personeelskost (€)"]].rename(columns={"maand": "Maand"})
 
         # Omzet Hinkelspelwinkels
@@ -747,8 +759,8 @@ with tab9:
                 gekozen_maand = detail_df.iloc[gekozen_rijen[0]]["Maand"]
                 st.markdown(f"### Bankverrichtingen — {gekozen_maand}")
 
-                # Loonbetalingen voor die maand (gefilterd op periode uit omschrijving)
-                loon_detail = loon_df[loon_df["maand"] == gekozen_maand].copy()
+                # Loonbetalingen voor die maand gefilterd op werknemers van de functie
+                loon_detail = loon_df_functie[loon_df_functie["maand"] == gekozen_maand].copy()
                 if not loon_detail.empty:
                     loon_detail["Partner"] = loon_detail["partner_id"].apply(
                         lambda x: x[1] if isinstance(x, list) else "—"
@@ -756,17 +768,13 @@ with tab9:
                     loon_detail["Rekening"] = loon_detail["account_id"].apply(
                         lambda x: x[1] if isinstance(x, list) else "—"
                     )
-                    loon_detail["Aandeel (€)"] = loon_detail["debit"] * ratio
-                    totaal_brut = loon_detail["debit"].sum()
-                    totaal_aandeel = loon_detail["Aandeel (€)"].sum()
-                    st.caption(
-                        f"Totale loonbetaling: € {totaal_brut:,.0f} × {ratio*100:.1f}% = "
-                        f"**€ {totaal_aandeel:,.0f}** personeelskost {gekozen_functie}"
-                    )
+                    totaal = loon_detail["debit"].sum()
+                    st.caption(f"Netto loonkost {gekozen_functie}: **€ {totaal:,.0f}**")
                     st.dataframe(
-                        loon_detail[["date", "Partner", "Rekening", "name", "ref", "debit", "Aandeel (€)"]].rename(
-                            columns={"date": "Datum", "name": "Omschrijving", "ref": "Referentie", "debit": "Bedrag (€)"}
-                        ).style.format({"Bedrag (€)": "€ {:,.0f}", "Aandeel (€)": "€ {:,.0f}"}),
+                        loon_detail[["date", "werknemer", "Partner", "Rekening", "name", "ref", "debit"]].rename(
+                            columns={"date": "Datum", "werknemer": "Werknemer", "name": "Omschrijving",
+                                     "ref": "Referentie", "debit": "Bedrag (€)"}
+                        ).style.format({"Bedrag (€)": "€ {:,.0f}"}),
                         use_container_width=True, hide_index=True,
                     )
                 else:
