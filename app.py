@@ -674,7 +674,7 @@ with tab9:
             tekst = " ".join((r.get("name", "") or "", r.get("ref", "") or "")).lower()
             if "bezoldiging" in rekening:
                 return True
-            if "advances" in partner or "recoveries" in partner or "advances" in tekst or "recoveries" in tekst:
+            if "advances" in partner or "recoveries" in partner or "voorschot" in partner or "advances" in tekst or "recoveries" in tekst or "voorschot" in tekst:
                 return True
             return False
 
