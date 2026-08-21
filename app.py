@@ -675,16 +675,12 @@ with tab9:
 
         # Bezoldigingen en voorschotten: zoek op /A/Bezoldiging en /A/Voorschot in move/omschrijving/ref
         # Lonen: debit > 0 met MM/YYYY in de tekst
-        def _is_loonbetaling(r) -> bool:
-            rekening = (r["account_id"][1] if isinstance(r.get("account_id"), list) else "").lower()
-            if "bezoldiging" in rekening:
-                return False
-            tekst = _alle_tekst(r)
-            if "/a/" in tekst:
-                return False
-            return (r.get("debit") or 0) > 0
-
-        loon_personeel = [r for r in loon_raw if _is_loonbetaling(r)]
+        # Enkel rekening "Te betalen Lonen" (niet bezoldiging), debit > 0
+        loon_personeel = [
+            r for r in loon_raw
+            if (r.get("debit") or 0) > 0
+            and "bezoldiging" not in (r["account_id"][1] if isinstance(r.get("account_id"), list) else "").lower()
+        ]
 
         def _periode_uit_omschrijving(rij) -> str:
             move_naam = _move_naam(rij)
