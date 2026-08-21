@@ -677,11 +677,8 @@ with tab9:
             bank_delen = set(bank_naam.lower().split())
             return bool(delen) and delen.issubset(bank_delen)
 
-        # Loonkost uit "Te betalen Lonen"
-        loon_personeel = [r for r in loon_raw if "bezoldiging" not in (
-            r["account_id"][1] if isinstance(r.get("account_id"), list) else ""
-        ).lower()]
-        loon_df_all = pd.DataFrame(loon_personeel)
+        # Alle personeelskosten (lonen + bezoldigingen) voor individuele matching
+        loon_df_all = pd.DataFrame(loon_raw)
         loon_df_all["partner_naam"] = loon_df_all["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
         loon_df_all["maand"] = pd.to_datetime(loon_df_all["date"]).dt.to_period("M").astype(str)
 
