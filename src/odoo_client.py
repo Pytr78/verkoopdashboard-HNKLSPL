@@ -123,9 +123,8 @@ def fetch_personeelskosten() -> list:
         [[
             ["account_id", "in", account_ids],
             ["move_id.state", "=", "posted"],
-            ["move_id.journal_id.type", "in", ["bank", "cash"]],
         ]],
-        {"fields": ["id", "date", "name", "ref", "partner_id", "debit", "credit", "account_id", "move_id"]}
+        {"fields": ["id", "date", "name", "ref", "partner_id", "debit", "credit", "account_id", "move_id", "journal_id"]}
     )
     return lines
 

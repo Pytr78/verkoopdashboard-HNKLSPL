@@ -693,11 +693,12 @@ with tab9:
 
         with st.expander(f"🔍 Diagnostiek: {len(loon_raw)} rijen opgehaald, {len(loon_personeel)} na filtering"):
             diag_df = loon_df[["date", "betaaldatum_maand", "maand", "name", "ref",
-                                "partner_id", "account_id", "debit"]].copy()
+                                "partner_id", "account_id", "journal_id", "debit"]].copy()
             diag_df["Partner"] = diag_df["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
             diag_df["Rekening"] = diag_df["account_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
+            diag_df["Journaal"] = diag_df["journal_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
             st.dataframe(
-                diag_df[["date", "betaaldatum_maand", "maand", "Partner", "Rekening", "name", "ref", "debit"]]
+                diag_df[["date", "betaaldatum_maand", "maand", "Journaal", "Partner", "Rekening", "name", "ref", "debit"]]
                 .rename(columns={"date": "Datum", "betaaldatum_maand": "Maand (datum)",
                                  "maand": "Maand (omschrijving)", "name": "Omschrijving",
                                  "ref": "Referentie", "debit": "Bedrag (€)"})
