@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import io
 import plotly.express as px
-from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen
+from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen, fetch_employees
 from src.data_processing import invoices_to_dataframe, omzet_per_partner_per_maand, omzet_per_partner_totaal
 from src.charts import lijndiagram, staafdiagram
 from src.management_summary import bereken_samenvatting
@@ -60,6 +60,10 @@ def laad_data():
 def laad_betalingen():
     return fetch_betaalde_facturen()
 
+@st.cache_data(ttl=86400)
+def laad_werknemers():
+    return fetch_employees()
+
 with st.spinner("Data ophalen uit Odoo..."):
     df = laad_data()
 
@@ -107,7 +111,7 @@ col4.metric("Aantal facturen", len(df_gefilterd))
 st.divider()
 
 # --- Tabs ---
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "🚨 Actiepunten",
     "🎯 Doelstellingen",
     "📊 Grafieken",
@@ -116,6 +120,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "💳 Betalingsgedrag",
     "💰 Cashflow",
     "🏷️ Segmentatie per label",
+    "👷 Personeelskosten",
 ])
 
 # ── Tab 1: Actiepunten ──────────────────────────────────────────────────────
@@ -543,3 +548,40 @@ with tab8:
             use_container_width=True,
             hide_index=True,
         )
+
+# ── Tab 9: Personeelskosten ─────────────────────────────────────────────────
+with tab9:
+    st.header("Personeelskosten")
+    st.caption("Stap 1: overzicht werknemers per functie en afdeling — basis voor rendabiliteitsanalyse per domein")
+
+    werknemers_raw = laad_werknemers()
+
+    if not werknemers_raw:
+        st.warning("Geen werknemers gevonden. Controleer of de HR-module actief is in Odoo.")
+    else:
+        wdf = pd.DataFrame(werknemers_raw)
+        wdf["functie"] = wdf["job_id"].apply(lambda x: x[1] if isinstance(x, list) else (x or ""))
+        wdf["afdeling"] = wdf["department_id"].apply(lambda x: x[1] if isinstance(x, list) else (x or ""))
+        wdf["functietitel"] = wdf["job_title"].fillna("")
+        wdf = wdf[["name", "functie", "functietitel", "afdeling"]].rename(columns={
+            "name": "Werknemer", "functie": "Functie", "functietitel": "Functietitel", "afdeling": "Afdeling"
+        })
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Aantal werknemers", len(wdf))
+        col2.metric("Aantal functies", wdf["Functie"].nunique())
+        col3.metric("Aantal afdelingen", wdf["Afdeling"].nunique())
+
+        st.divider()
+
+        filter_afd = st.selectbox("Filter op afdeling", options=["Alle"] + sorted(wdf["Afdeling"].unique().tolist()))
+        weergave = wdf if filter_afd == "Alle" else wdf[wdf["Afdeling"] == filter_afd]
+        st.dataframe(weergave.sort_values(["Afdeling", "Functie", "Werknemer"]), use_container_width=True, hide_index=True)
+
+        with st.expander("Werknemers per afdeling"):
+            st.dataframe(
+                wdf.groupby("Afdeling").agg(werknemers=("Werknemer", "count")).reset_index()
+                .rename(columns={"werknemers": "Werknemers"})
+                .sort_values("Werknemers", ascending=False),
+                use_container_width=True, hide_index=True,
+            )

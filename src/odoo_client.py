@@ -101,3 +101,14 @@ def fetch_partner_info(partner_ids: list) -> tuple:
 def fetch_partner_emails(partner_ids: list) -> dict:
     emails, _ = fetch_partner_info(partner_ids)
     return emails
+
+
+def fetch_employees() -> list:
+    uid = get_uid()
+    models = get_models()
+    return models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "hr.employee", "search_read",
+        [[["active", "=", True]]],
+        {"fields": ["id", "name", "job_id", "job_title", "department_id"]}
+    )
