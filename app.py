@@ -671,12 +671,31 @@ with tab9:
             lambda x: x[1] if isinstance(x, list) else "—"
         )
 
+        # Overzicht per maand
+        maand_df = (
+            lonen_bank_df.groupby("maand")
+            .agg(
+                totaal=("bedrag", "sum"),
+                werknemers=("partner_name", lambda x: ", ".join(sorted(x.dropna().unique())))
+            )
+            .reset_index()
+            .sort_values("maand")
+            .rename(columns={"maand": "Maand", "totaal": "Totaal (€)", "werknemers": "Werknemers"})
+        )
+        st.subheader("Totaal per maand")
         st.dataframe(
-            lonen_bank_df[["date", "maand", "partner_name", "payment_ref", "journaal", "bedrag"]]
-            .rename(columns={"date": "Datum", "maand": "Maand", "partner_name": "Werknemer",
-                             "payment_ref": "Omschrijving", "journaal": "Journaal", "bedrag": "Bedrag (€)"})
-            .sort_values(["Maand", "Werknemer"])
-            .style.format({"Bedrag (€)": "€ {:,.0f}"}),
+            maand_df.style.format({"Totaal (€)": "€ {:,.0f}"}),
             use_container_width=True, hide_index=True,
         )
+
+        # Detail per werknemer
+        with st.expander("Detail per werknemer"):
+            st.dataframe(
+                lonen_bank_df[["date", "maand", "partner_name", "payment_ref", "journaal", "bedrag"]]
+                .rename(columns={"date": "Datum", "maand": "Maand", "partner_name": "Werknemer",
+                                 "payment_ref": "Omschrijving", "journaal": "Journaal", "bedrag": "Bedrag (€)"})
+                .sort_values(["Maand", "Werknemer"])
+                .style.format({"Bedrag (€)": "€ {:,.0f}"}),
+                use_container_width=True, hide_index=True,
+            )
 
