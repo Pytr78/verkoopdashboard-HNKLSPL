@@ -671,6 +671,19 @@ with tab9:
             lambda x: x[1] if isinstance(x, list) else "—"
         )
 
+        # Match werknemer aan functie via Odoo HR
+        def _match_functie(bank_naam: str) -> str:
+            if not bank_naam:
+                return "Onbekend"
+            woorden = {w.lower() for w in bank_naam.split() if len(w) > 2}
+            for e in werknemers_raw:
+                e_woorden = {w.lower() for w in e["name"].split() if len(w) > 2}
+                if woorden and e_woorden and woorden == e_woorden:
+                    return e["job_id"][1] if isinstance(e.get("job_id"), list) else "Onbekend"
+            return "Onbekend"
+
+        lonen_bank_df["functie"] = lonen_bank_df["partner_name"].apply(_match_functie)
+
         # Overzicht per maand
         maand_df = (
             lonen_bank_df.groupby("maand")
@@ -688,13 +701,32 @@ with tab9:
             use_container_width=True, hide_index=True,
         )
 
+        st.subheader("Totaal per functie per maand")
+        functie_df = (
+            lonen_bank_df.groupby(["functie", "maand"])["bedrag"]
+            .sum()
+            .reset_index()
+            .pivot(index="functie", columns="maand", values="bedrag")
+            .fillna(0)
+        )
+        functie_df["Totaal"] = functie_df.sum(axis=1)
+        functie_df = functie_df.sort_values("Totaal", ascending=False)
+        st.dataframe(
+            functie_df.style.format("€ {:,.0f}"),
+            use_container_width=True,
+        )
+
+        niet_herkend = lonen_bank_df[lonen_bank_df["functie"] == "Onbekend"]["partner_name"].unique()
+        if len(niet_herkend):
+            st.warning(f"Niet gekoppeld aan functie: {', '.join(sorted(niet_herkend))}")
+
         # Detail per werknemer
         with st.expander("Detail per werknemer"):
             st.dataframe(
-                lonen_bank_df[["date", "maand", "partner_name", "payment_ref", "journaal", "bedrag"]]
+                lonen_bank_df[["date", "maand", "partner_name", "functie", "payment_ref", "bedrag"]]
                 .rename(columns={"date": "Datum", "maand": "Maand", "partner_name": "Werknemer",
-                                 "payment_ref": "Omschrijving", "journaal": "Journaal", "bedrag": "Bedrag (€)"})
-                .sort_values(["Maand", "Werknemer"])
+                                 "functie": "Functie", "payment_ref": "Omschrijving", "bedrag": "Bedrag (€)"})
+                .sort_values(["Maand", "Functie", "Werknemer"])
                 .style.format({"Bedrag (€)": "€ {:,.0f}"}),
                 use_container_width=True, hide_index=True,
             )
