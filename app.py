@@ -653,19 +653,29 @@ with tab9:
     lonen_bank_raw = laad_lonen_bankafschriften()
 
     if not lonen_bank_raw:
-        st.info("Geen bankafschriftregels gevonden.")
+        st.info("Geen loonbetalingen gevonden in bankafschriften (zoekt op /A/ in communicatie).")
     else:
         lonen_bank_df = pd.DataFrame(lonen_bank_raw)
+
+        def _extract_maand(ref: str, datum: str) -> str:
+            m = re.search(r'\b(\d{2})/(\d{4})\b', ref or "")
+            if m:
+                return f"{m.group(2)}-{m.group(1)}"
+            return pd.to_datetime(datum).strftime("%Y-%m")
+
+        lonen_bank_df["maand"] = lonen_bank_df.apply(
+            lambda r: _extract_maand(r.get("payment_ref", ""), r["date"]), axis=1
+        )
+        lonen_bank_df["bedrag"] = lonen_bank_df["amount"].abs()
         lonen_bank_df["journaal"] = lonen_bank_df["journal_id"].apply(
             lambda x: x[1] if isinstance(x, list) else "—"
         )
-        st.caption(f"{len(lonen_bank_df)} recente uitgaande bankregels — bekijk welk veld de /A/ info bevat")
+
         st.dataframe(
-            lonen_bank_df[["date", "journaal", "partner_name", "name", "ref", "payment_ref", "narration", "amount"]]
-            .rename(columns={"date": "Datum", "journaal": "Journaal", "partner_name": "Tegenpartij",
-                             "name": "Naam", "ref": "Ref", "payment_ref": "Payment Ref",
-                             "narration": "Narration", "amount": "Bedrag (€)"})
-            .sort_values("Datum", ascending=False)
+            lonen_bank_df[["date", "maand", "partner_name", "payment_ref", "journaal", "bedrag"]]
+            .rename(columns={"date": "Datum", "maand": "Maand", "partner_name": "Werknemer",
+                             "payment_ref": "Omschrijving", "journaal": "Journaal", "bedrag": "Bedrag (€)"})
+            .sort_values(["Maand", "Werknemer"])
             .style.format({"Bedrag (€)": "€ {:,.0f}"}),
             use_container_width=True, hide_index=True,
         )

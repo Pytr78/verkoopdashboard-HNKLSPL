@@ -106,16 +106,11 @@ def fetch_partner_emails(partner_ids: list) -> dict:
 def fetch_lonen_bankafschriften() -> list:
     uid = get_uid()
     models = get_models()
-    # Haal recente bankafschriftregels op om te zien welke velden beschikbaar zijn
     return models.execute_kw(
         ODOO_DB, uid, ODOO_PASSWORD,
         "account.bank.statement.line", "search_read",
-        [[["amount", "<", 0]]],
-        {
-            "fields": ["id", "date", "partner_name", "payment_ref", "narration", "amount", "journal_id", "name", "ref"],
-            "limit": 50,
-            "order": "date desc",
-        }
+        [[["payment_ref", "ilike", "/A/"]]],
+        {"fields": ["id", "date", "partner_name", "payment_ref", "amount", "journal_id"]}
     )
 
 
