@@ -672,13 +672,18 @@ with tab9:
         )
 
         # Match werknemer aan functie via Odoo HR
+        import unicodedata
+
+        def _normaliseer(tekst: str) -> set:
+            genormaliseerd = unicodedata.normalize("NFD", tekst).encode("ascii", "ignore").decode("utf-8")
+            return {w.lower() for w in genormaliseerd.split() if len(w) > 2}
+
         def _match_functie(bank_naam: str) -> str:
             if not bank_naam:
                 return "Onbekend"
-            woorden = {w.lower() for w in bank_naam.split() if len(w) > 2}
+            woorden = _normaliseer(bank_naam)
             for e in werknemers_raw:
-                e_woorden = {w.lower() for w in e["name"].split() if len(w) > 2}
-                if woorden and e_woorden and woorden == e_woorden:
+                if woorden and _normaliseer(e["name"]) == woorden:
                     return e["job_id"][1] if isinstance(e.get("job_id"), list) else "Onbekend"
             return "Onbekend"
 
