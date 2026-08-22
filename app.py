@@ -766,7 +766,7 @@ with tab9:
                 )
             )
             if hinkel:
-                masker = masker | df["partner_name"].str.contains("Hinkelspel", case=False, na=False)
+                masker = masker | df["partner_name"].str.lower().str.contains("hinkelspelwinkels", na=False)
             omzet_seg = (
                 df[masker].groupby("maand")["omzet"].sum()
                 .reset_index()
