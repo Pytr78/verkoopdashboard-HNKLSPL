@@ -739,13 +739,13 @@ with tab9:
         st.divider()
         st.subheader("Rendabiliteit per segment vs. personeelskost")
 
-        # Labels uit facturen (klant: prefix)
+        # Labels uit facturen (klant: prefix) + Hinkelspelwinkels als klantnaam
         alle_labels = sorted({
             lbl[len("klant:"):].strip()
             for rij in df["labels"]
             for lbl in rij
             if lbl.lower().startswith("klant:")
-        })
+        }) + ["Hinkelspelwinkels"]
         alle_functies = sorted(lonen_bank_df[lonen_bank_df["functie"] != "Onbekend"]["functie"].unique())
 
         col_l, col_r = st.columns(2)
@@ -755,14 +755,18 @@ with tab9:
             gekozen_functies = st.multiselect("Personeelsfunctie(s)", options=alle_functies, default=alle_functies[:1] if alle_functies else [])
 
         if gekozen_labels and gekozen_functies:
-            # Omzet gefilterd op gekozen labels
+            # Omzet gefilterd op gekozen labels (+ Hinkelspelwinkels als klantnaam)
+            hinkel = "Hinkelspelwinkels" in gekozen_labels
+            label_selectie = [l for l in gekozen_labels if l != "Hinkelspelwinkels"]
             masker = df["labels"].apply(
                 lambda lbls: any(
-                    lbl[len("klant:"):].strip() in gekozen_labels
+                    lbl[len("klant:"):].strip() in label_selectie
                     for lbl in lbls
                     if lbl.lower().startswith("klant:")
                 )
             )
+            if hinkel:
+                masker = masker | df["partner_name"].str.contains("Hinkelspel", case=False, na=False)
             omzet_seg = (
                 df[masker].groupby("maand")["omzet"].sum()
                 .reset_index()
