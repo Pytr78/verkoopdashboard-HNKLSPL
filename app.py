@@ -736,3 +736,83 @@ with tab9:
                 use_container_width=True, hide_index=True,
             )
 
+        st.divider()
+        st.subheader("Rendabiliteit per segment vs. personeelskost")
+
+        # Labels uit facturen (klant: prefix)
+        alle_labels = sorted({
+            lbl[len("klant:"):].strip()
+            for rij in df["labels"]
+            for lbl in rij
+            if lbl.lower().startswith("klant:")
+        })
+        alle_functies = sorted(lonen_bank_df[lonen_bank_df["functie"] != "Onbekend"]["functie"].unique())
+
+        col_l, col_r = st.columns(2)
+        with col_l:
+            gekozen_labels = st.multiselect("Klantsegment(en)", options=alle_labels, default=alle_labels[:1] if alle_labels else [])
+        with col_r:
+            gekozen_functies = st.multiselect("Personeelsfunctie(s)", options=alle_functies, default=alle_functies[:1] if alle_functies else [])
+
+        if gekozen_labels and gekozen_functies:
+            # Omzet gefilterd op gekozen labels
+            masker = df["labels"].apply(
+                lambda lbls: any(
+                    lbl[len("klant:"):].strip() in gekozen_labels
+                    for lbl in lbls
+                    if lbl.lower().startswith("klant:")
+                )
+            )
+            omzet_seg = (
+                df[masker].groupby("maand")["omzet"].sum()
+                .reset_index()
+                .rename(columns={"maand": "Maand", "omzet": "Omzet (€)"})
+            )
+
+            # Loonkost gefilterd op gekozen functies
+            loon_seg = (
+                lonen_bank_df[lonen_bank_df["functie"].isin(gekozen_functies)]
+                .groupby("maand")["bedrag"].sum()
+                .reset_index()
+                .rename(columns={"maand": "Maand", "bedrag": "Personeelskost (€)"})
+            )
+
+            vergelijk = omzet_seg.merge(loon_seg, on="Maand", how="outer").fillna(0).sort_values("Maand")
+            vergelijk["Marge (€)"] = vergelijk["Omzet (€)"] - vergelijk["Personeelskost (€)"]
+
+            totaal_omzet = vergelijk["Omzet (€)"].sum()
+            totaal_kost = vergelijk["Personeelskost (€)"].sum()
+            totaal_marge = vergelijk["Marge (€)"].sum()
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Omzet", f"€ {totaal_omzet:,.0f}")
+            c2.metric("Personeelskost", f"€ {totaal_kost:,.0f}")
+            c3.metric("Marge", f"€ {totaal_marge:,.0f}")
+            c4.metric("Rendabiliteit", f"{totaal_marge / totaal_omzet * 100:.1f}%" if totaal_omzet else "—")
+
+            st.plotly_chart(
+                px.bar(
+                    vergelijk.melt(id_vars="Maand", value_vars=["Omzet (€)", "Personeelskost (€)", "Marge (€)"]),
+                    x="Maand", y="value", color="variable", barmode="group",
+                    labels={"value": "Bedrag (€)", "variable": ""},
+                    title=f"Omzet [{', '.join(gekozen_labels)}] vs. loonkost [{', '.join(gekozen_functies)}]",
+                ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+                use_container_width=True,
+            )
+
+            vergelijk["Kost/Omzet (%)"] = vergelijk.apply(
+                lambda r: r["Personeelskost (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] else 0, axis=1
+            )
+            vergelijk["Rendabiliteit (%)"] = vergelijk.apply(
+                lambda r: r["Marge (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] else 0, axis=1
+            )
+            st.dataframe(
+                vergelijk.style.format({
+                    "Omzet (€)": "€ {:,.0f}", "Personeelskost (€)": "€ {:,.0f}",
+                    "Marge (€)": "€ {:,.0f}", "Kost/Omzet (%)": "{:.1f}%", "Rendabiliteit (%)": "{:.1f}%",
+                }),
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.info("Selecteer minstens één segment en één functie.")
+
