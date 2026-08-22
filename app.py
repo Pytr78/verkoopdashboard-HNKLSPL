@@ -697,6 +697,9 @@ with tab9:
             return pd.to_datetime(rij["date"]).strftime("%Y-%m")
 
         loon_df = pd.DataFrame(loon_personeel)
+        for _col in ["bank_partner_name", "bank_payment_ref", "bank_narration", "move_ref", "move_narration"]:
+            if _col not in loon_df.columns:
+                loon_df[_col] = ""
         loon_df["move_naam"] = loon_df.apply(_move_naam, axis=1)
         loon_df["maand"] = loon_df.apply(_periode_uit_omschrijving, axis=1)
         loon_df["betaaldatum_maand"] = pd.to_datetime(loon_df["date"]).dt.strftime("%Y-%m")

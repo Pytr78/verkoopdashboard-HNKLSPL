@@ -129,24 +129,29 @@ def fetch_personeelskosten() -> list:
     )
 
     # Haal bankafschriftregels op voor counterpartyName en communicatie
-    stmt_ids = list({l["statement_line_id"][0] for l in lines
-                     if isinstance(l.get("statement_line_id"), list)})
-    stmt_map = {}
-    if stmt_ids:
-        stmts = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
-            "account.bank.statement.line", "search_read",
-            [[["id", "in", stmt_ids]]],
-            {"fields": ["id", "partner_name", "payment_ref", "narration"]}
-        )
-        stmt_map = {s["id"]: s for s in stmts}
-
-    for line in lines:
-        stmt_id = line["statement_line_id"][0] if isinstance(line.get("statement_line_id"), list) else None
-        s = stmt_map.get(stmt_id, {})
-        line["bank_partner_name"] = s.get("partner_name") or ""
-        line["bank_payment_ref"] = s.get("payment_ref") or ""
-        line["bank_narration"] = s.get("narration") or ""
+    try:
+        stmt_ids = list({l["statement_line_id"][0] for l in lines
+                         if isinstance(l.get("statement_line_id"), list)})
+        stmt_map = {}
+        if stmt_ids:
+            stmts = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD,
+                "account.bank.statement.line", "search_read",
+                [[["id", "in", stmt_ids]]],
+                {"fields": ["id", "partner_name", "payment_ref", "narration"]}
+            )
+            stmt_map = {s["id"]: s for s in stmts}
+        for line in lines:
+            stmt_id = line["statement_line_id"][0] if isinstance(line.get("statement_line_id"), list) else None
+            s = stmt_map.get(stmt_id, {})
+            line["bank_partner_name"] = s.get("partner_name") or ""
+            line["bank_payment_ref"] = s.get("payment_ref") or ""
+            line["bank_narration"] = s.get("narration") or ""
+    except Exception:
+        for line in lines:
+            line["bank_partner_name"] = ""
+            line["bank_payment_ref"] = ""
+            line["bank_narration"] = ""
 
     return lines
 
