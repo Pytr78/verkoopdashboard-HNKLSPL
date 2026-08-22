@@ -124,29 +124,29 @@ def fetch_personeelskosten() -> list:
             ["account_id", "in", account_ids],
             ["move_id.state", "=", "posted"],
         ]],
-        {"fields": ["id", "date", "name", "ref", "partner_id", "debit", "credit", "account_id", "move_id", "journal_id"]}
+        {"fields": ["id", "date", "name", "ref", "partner_id", "debit", "credit",
+                    "account_id", "move_id", "journal_id", "statement_line_id"]}
     )
 
-    # Haal ook de ref van de parent move op (bevat bankcommmunicatie)
-    move_ids = list({l["move_id"][0] for l in lines if isinstance(l.get("move_id"), list)})
-    if move_ids:
-        moves = models.execute_kw(
+    # Haal bankafschriftregels op voor counterpartyName en communicatie
+    stmt_ids = list({l["statement_line_id"][0] for l in lines
+                     if isinstance(l.get("statement_line_id"), list)})
+    stmt_map = {}
+    if stmt_ids:
+        stmts = models.execute_kw(
             ODOO_DB, uid, ODOO_PASSWORD,
-            "account.move", "search_read",
-            [[["id", "in", move_ids]]],
-            {"fields": ["id", "ref", "narration"]}
+            "account.bank.statement.line", "search_read",
+            [[["id", "in", stmt_ids]]],
+            {"fields": ["id", "partner_name", "payment_ref", "narration"]}
         )
-        move_ref = {m["id"]: m for m in moves}
-        for line in lines:
-            move_id = line["move_id"][0] if isinstance(line.get("move_id"), list) else None
-            if move_id and move_id in move_ref:
-                line["move_ref"] = move_ref[move_id].get("ref") or ""
-                line["move_narration"] = move_ref[move_id].get("narration") or ""
-                line["move_payment_ref"] = ""
-            else:
-                line["move_ref"] = ""
-                line["move_narration"] = ""
-                line["move_payment_ref"] = ""
+        stmt_map = {s["id"]: s for s in stmts}
+
+    for line in lines:
+        stmt_id = line["statement_line_id"][0] if isinstance(line.get("statement_line_id"), list) else None
+        s = stmt_map.get(stmt_id, {})
+        line["bank_partner_name"] = s.get("partner_name") or ""
+        line["bank_payment_ref"] = s.get("payment_ref") or ""
+        line["bank_narration"] = s.get("narration") or ""
 
     return lines
 
