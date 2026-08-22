@@ -674,14 +674,24 @@ with tab9:
         # Match werknemer aan functie via Odoo HR
         import unicodedata
 
+        # Aliassen voor namen die anders staan in de bank dan in Odoo
+        NAAM_ALIASSEN = {
+            "lauwaert a. - van alphen t": "Van Alphen Tessa",
+        }
+
         def _normaliseer(tekst: str) -> set:
             genormaliseerd = unicodedata.normalize("NFD", tekst).encode("ascii", "ignore").decode("utf-8")
             return {w.lower() for w in genormaliseerd.split() if len(w) > 2}
 
+        def _odoo_naam(bank_naam: str) -> str:
+            alias = NAAM_ALIASSEN.get(bank_naam.lower().strip())
+            return alias if alias else bank_naam
+
         def _match_functie(bank_naam: str) -> str:
             if not bank_naam:
                 return "Onbekend"
-            woorden = _normaliseer(bank_naam)
+            opgezocht = _odoo_naam(bank_naam)
+            woorden = _normaliseer(opgezocht)
             for e in werknemers_raw:
                 if woorden and _normaliseer(e["name"]) == woorden:
                     return e["job_id"][1] if isinstance(e.get("job_id"), list) else "Onbekend"
