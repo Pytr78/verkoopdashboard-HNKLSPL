@@ -677,6 +677,7 @@ with tab9:
         # Aliassen voor namen die anders staan in de bank dan in Odoo
         NAAM_ALIASSEN = {
             "lauwaert a. - van alphen t": "Van Alphen Tessa",
+            "van assche emile": "Van Assche Juno",
         }
 
         def _normaliseer(tekst: str) -> set:
