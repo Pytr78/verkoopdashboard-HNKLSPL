@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 import io
 import plotly.express as px
-from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen, fetch_employees, fetch_personeelskosten
+from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen, fetch_employees, fetch_personeelskosten, fetch_lonen_bankafschriften
 from src.data_processing import invoices_to_dataframe, omzet_per_partner_per_maand, omzet_per_partner_totaal
 from src.charts import lijndiagram, staafdiagram
 from src.management_summary import bereken_samenvatting
@@ -68,6 +68,10 @@ def laad_werknemers():
 @st.cache_data(ttl=86400)
 def laad_personeelskosten():
     return fetch_personeelskosten()
+
+@st.cache_data(ttl=86400)
+def laad_lonen_bankafschriften():
+    return fetch_lonen_bankafschriften()
 
 
 with st.spinner("Data ophalen uit Odoo..."):
@@ -644,178 +648,40 @@ with tab9:
             )
 
     st.divider()
-    st.subheader("Rendabiliteit winkelpersoneel vs. Hinkelspelwinkels")
-    st.caption("Personeelskost = netto loon uit banktransacties, opgeteld per werknemer van de geselecteerde functie")
+    st.subheader("Loonbetalingen uit bankafschriften")
 
-    if not loon_raw or not werknemers_raw:
-        st.info("Loondata of werknemersdata ontbreekt.")
+    lonen_bank_raw = laad_lonen_bankafschriften()
+
+    if not lonen_bank_raw:
+        st.info("Geen loonbetalingen gevonden in bankafschriften (zoekt op /A/Bezoldiging, /A/Lonen, /A/Voorschot).")
     else:
-        alle_functies = sorted({
-            e["job_id"][1] for e in werknemers_raw if isinstance(e.get("job_id"), list)
-        })
-        gekozen_functie = st.selectbox("Personeelsfunctie", options=alle_functies)
+        lonen_bank_df = pd.DataFrame(lonen_bank_raw)
 
-        # Werknemers van gekozen functie
-        werknemers_functie = [
-            e for e in werknemers_raw
-            if isinstance(e.get("job_id"), list) and e["job_id"][1] == gekozen_functie
-        ]
+        def _extract_werknemer(ref: str) -> str:
+            m = re.match(r'^(.+?)\s*/[Aa]/', ref or "")
+            return m.group(1).strip() if m else ""
 
-        with st.expander(f"👤 Werknemers met functie '{gekozen_functie}' ({len(werknemers_functie)})"):
-            st.dataframe(pd.DataFrame([{
-                "Werknemer": e["name"],
-                "Afdeling": e["department_id"][1] if isinstance(e.get("department_id"), list) else "",
-            } for e in werknemers_functie]), use_container_width=True, hide_index=True)
+        def _extract_maand(ref: str, datum: str) -> str:
+            m = re.search(r'\b(\d{2})/(\d{4})\b', ref or "")
+            if m:
+                return f"{m.group(2)}-{m.group(1)}"
+            return pd.to_datetime(datum).strftime("%Y-%m")
 
-        def _move_naam(r) -> str:
-            return r["move_id"][1] if isinstance(r.get("move_id"), list) else ""
-
-        def _alle_tekst(r) -> str:
-            return " ".join((
-                _move_naam(r), r.get("name", "") or "", r.get("ref", "") or "",
-                r.get("bank_partner_name", "") or "", r.get("bank_payment_ref", "") or "",
-                r.get("bank_narration", "") or "",
-            )).lower()
-
-        # Enkel rekening "Te betalen Lonen" (niet bezoldiging), debit > 0
-        loon_personeel = [
-            r for r in loon_raw
-            if (r.get("debit") or 0) > 0
-            and "bezoldiging" not in (r["account_id"][1] if isinstance(r.get("account_id"), list) else "").lower()
-        ]
-
-        def _periode_uit_omschrijving(rij) -> str:
-            velden = (
-                _move_naam(rij), rij.get("name", "") or "", rij.get("ref", "") or "",
-                rij.get("bank_partner_name", "") or "", rij.get("bank_payment_ref", "") or "",
-                rij.get("bank_narration", "") or "",
-            )
-            for veld in velden:
-                m = re.search(r'\b(\d{2})/(\d{4})\b', veld)
-                if m:
-                    return f"{m.group(2)}-{m.group(1)}"
-            return pd.to_datetime(rij["date"]).strftime("%Y-%m")
-
-        loon_df = pd.DataFrame(loon_personeel)
-        for _col in ["bank_partner_name", "bank_payment_ref", "bank_narration", "move_ref", "move_narration"]:
-            if _col not in loon_df.columns:
-                loon_df[_col] = ""
-        loon_df["move_naam"] = loon_df.apply(_move_naam, axis=1)
-        loon_df["maand"] = loon_df.apply(_periode_uit_omschrijving, axis=1)
-        loon_df["betaaldatum_maand"] = pd.to_datetime(loon_df["date"]).dt.strftime("%Y-%m")
-
-        with st.expander(f"🔍 Diagnostiek: {len(loon_raw)} rijen opgehaald, {len(loon_personeel)} na filtering"):
-            diag_df = loon_df[["date", "betaaldatum_maand", "maand", "move_naam", "name", "ref",
-                                "bank_partner_name", "bank_payment_ref", "partner_id", "account_id", "journal_id", "debit"]].copy()
-            diag_df["Partner"] = diag_df["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
-            diag_df["Rekening"] = diag_df["account_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
-            diag_df["Journaal"] = diag_df["journal_id"].apply(lambda x: x[1] if isinstance(x, list) else "—")
-            st.dataframe(
-                diag_df[["date", "betaaldatum_maand", "maand", "move_naam", "bank_partner_name", "bank_payment_ref",
-                          "Journaal", "Partner", "Rekening", "name", "ref", "debit"]]
-                .rename(columns={"date": "Datum", "betaaldatum_maand": "Maand (datum)", "move_naam": "Move",
-                                 "bank_partner_name": "Tegenpartij (bank)", "bank_payment_ref": "Bankcommunicatie",
-                                 "maand": "Maand (omschrijving)", "name": "Omschrijving",
-                                 "ref": "Referentie", "debit": "Bedrag (€)"})
-                .sort_values("Datum")
-                .style.format({"Bedrag (€)": "€ {:,.0f}"}),
-                use_container_width=True, hide_index=True,
-            )
-
-        loon_maand = loon_df.groupby("maand")["debit"].sum().reset_index()
-        loon_maand["Personeelskost (€)"] = loon_maand["debit"]
-        loon_maand = loon_maand[["maand", "Personeelskost (€)"]].rename(columns={"maand": "Maand"})
-
-        # Omzet Hinkelspelwinkels
-        omzet_segment = (
-            df[df["partner_name"].str.contains("Hinkelspel", case=False, na=False)]
-            .groupby("maand")["omzet"].sum()
-            .reset_index()
-            .rename(columns={"maand": "Maand", "omzet": "Omzet (€)"})
+        lonen_bank_df["werknemer"] = lonen_bank_df["payment_ref"].apply(_extract_werknemer)
+        lonen_bank_df["maand"] = lonen_bank_df.apply(
+            lambda r: _extract_maand(r.get("payment_ref", ""), r["date"]), axis=1
+        )
+        lonen_bank_df["bedrag"] = lonen_bank_df["amount"].abs()
+        lonen_bank_df["journaal"] = lonen_bank_df["journal_id"].apply(
+            lambda x: x[1] if isinstance(x, list) else "—"
         )
 
-        vergelijk_df = loon_maand.merge(omzet_segment, on="Maand", how="outer").fillna(0).sort_values("Maand")
-        vergelijk_df["Marge (€)"] = vergelijk_df["Omzet (€)"] - vergelijk_df["Personeelskost (€)"]
-
-        totaal_omzet = vergelijk_df["Omzet (€)"].sum()
-        totaal_kost = vergelijk_df["Personeelskost (€)"].sum()
-        totaal_marge = vergelijk_df["Marge (€)"].sum()
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Omzet Hinkelspelwinkels", f"€ {totaal_omzet:,.0f}")
-        c2.metric(f"Loonskost {gekozen_functie}", f"€ {totaal_kost:,.0f}")
-        c3.metric("Marge", f"€ {totaal_marge:,.0f}")
-        c4.metric("Rendabiliteit", f"{totaal_marge / totaal_omzet * 100:.1f}%" if totaal_omzet else "—")
-
-        st.plotly_chart(
-            px.bar(
-                vergelijk_df.melt(id_vars="Maand", value_vars=["Omzet (€)", "Personeelskost (€)", "Marge (€)"]),
-                x="Maand", y="value", color="variable", barmode="group",
-                labels={"value": "Bedrag (€)", "variable": "", "Maand": "Maand"},
-                title=f"Omzet Hinkelspelwinkels vs. loonskost {gekozen_functie}",
-            ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
-            use_container_width=True,
+        st.dataframe(
+            lonen_bank_df[["date", "maand", "werknemer", "payment_ref", "journaal", "bedrag"]]
+            .rename(columns={"date": "Datum", "maand": "Maand", "werknemer": "Werknemer",
+                             "payment_ref": "Omschrijving", "journaal": "Journaal", "bedrag": "Bedrag (€)"})
+            .sort_values(["Maand", "Werknemer"])
+            .style.format({"Bedrag (€)": "€ {:,.0f}"}),
+            use_container_width=True, hide_index=True,
         )
 
-        with st.expander("Detail per maand"):
-            detail_df = vergelijk_df.copy()
-            detail_df["Kost/Omzet (%)"] = detail_df.apply(
-                lambda r: r["Personeelskost (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] != 0 else 0, axis=1
-            )
-            detail_df["Rendabiliteit (%)"] = detail_df.apply(
-                lambda r: r["Marge (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] != 0 else 0, axis=1
-            )
-            st.caption("Klik op een rij om de onderliggende bankverrichtingen te zien.")
-            selectie = st.dataframe(
-                detail_df.style.format({
-                    "Omzet (€)": "€ {:,.0f}",
-                    "Personeelskost (€)": "€ {:,.0f}",
-                    "Marge (€)": "€ {:,.0f}",
-                    "Kost/Omzet (%)": "{:.1f}%",
-                    "Rendabiliteit (%)": "{:.1f}%",
-                }),
-                use_container_width=True, hide_index=True,
-                on_select="rerun", selection_mode="single-row",
-            )
-            gekozen_rijen = selectie.selection.rows if selectie and hasattr(selectie, "selection") else []
-            if gekozen_rijen:
-                gekozen_maand = detail_df.iloc[gekozen_rijen[0]]["Maand"]
-                st.markdown(f"### Bankverrichtingen — {gekozen_maand}")
-
-                # Alle "te betalen lonen" transacties voor die maand
-                loon_detail = loon_df[loon_df["maand"] == gekozen_maand].copy()
-                if not loon_detail.empty:
-                    loon_detail["Partner"] = loon_detail["partner_id"].apply(
-                        lambda x: x[1] if isinstance(x, list) else "—"
-                    )
-                    loon_detail["Rekening"] = loon_detail["account_id"].apply(
-                        lambda x: x[1] if isinstance(x, list) else "—"
-                    )
-                    totaal = loon_detail["debit"].sum()
-                    st.caption(f"Totale loonbetalingen: **€ {totaal:,.0f}**")
-                    st.dataframe(
-                        loon_detail[["date", "Partner", "Rekening", "name", "ref", "debit"]].rename(
-                            columns={"date": "Datum", "name": "Omschrijving",
-                                     "ref": "Referentie", "debit": "Bedrag (€)"}
-                        ).style.format({"Bedrag (€)": "€ {:,.0f}"}),
-                        use_container_width=True, hide_index=True,
-                    )
-                else:
-                    st.info(f"Geen loonbetalingen gevonden voor {gekozen_maand}.")
-
-                # Hinkelspelwinkels facturen voor die maand
-                st.markdown(f"#### Facturen Hinkelspelwinkels — {gekozen_maand}")
-                facturen_maand = df[
-                    df["partner_name"].str.contains("Hinkelspel", case=False, na=False) &
-                    (df["maand"] == gekozen_maand)
-                ][["name", "partner_name", "invoice_date", "omzet", "payment_state"]].rename(
-                    columns={"name": "Factuur", "partner_name": "Klant",
-                             "invoice_date": "Datum", "omzet": "Omzet (€)", "payment_state": "Betaalstatus"}
-                )
-                if not facturen_maand.empty:
-                    st.dataframe(
-                        facturen_maand.style.format({"Omzet (€)": "€ {:,.0f}"}),
-                        use_container_width=True, hide_index=True,
-                    )
-                else:
-                    st.info(f"Geen facturen voor Hinkelspelwinkels in {gekozen_maand}.")

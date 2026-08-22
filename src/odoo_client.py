@@ -103,6 +103,21 @@ def fetch_partner_emails(partner_ids: list) -> dict:
     return emails
 
 
+def fetch_lonen_bankafschriften() -> list:
+    uid = get_uid()
+    models = get_models()
+    return models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "account.bank.statement.line", "search_read",
+        [["|", "|",
+            ["payment_ref", "ilike", "/A/Bezoldiging"],
+            ["payment_ref", "ilike", "/A/Lonen"],
+            ["payment_ref", "ilike", "/A/Voorschot"],
+        ]],
+        {"fields": ["id", "date", "partner_name", "payment_ref", "amount", "journal_id"]}
+    )
+
+
 def fetch_personeelskosten() -> list:
     uid = get_uid()
     models = get_models()
