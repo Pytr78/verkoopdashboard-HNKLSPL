@@ -79,7 +79,7 @@ st.sidebar.caption("Data wordt automatisch ververst om de 24 uur.")
 st.sidebar.divider()
 
 alle_partners = sorted(df["partner_name"].unique().tolist())
-geselecteerde_partners = st.sidebar.multiselect("Selecteer klanten", options=alle_partners, default=alle_partners[:10])
+geselecteerde_partners = st.sidebar.multiselect("Selecteer klanten", options=alle_partners, default=alle_partners)
 
 alle_jaren = sorted(df["jaar"].unique().tolist(), reverse=True)
 geselecteerde_jaren = st.sidebar.multiselect("Selecteer jaar", options=alle_jaren, default=alle_jaren)
