@@ -465,8 +465,12 @@ with tab8:
         lambda xs: [x[len("klant:"):].strip() for x in xs if x.lower().startswith("klant:")]
     )
 
+    EIGEN_SEGMENTEN = {"hinkelspelwinkels", "hinkelspel markten"}
     klanten_zonder_label = (
-        df_labels[df_labels["labels"].apply(lambda x: len(x) == 0)]
+        df_labels[
+            df_labels["labels"].apply(lambda x: len(x) == 0) &
+            ~df_labels["partner_name"].str.lower().isin(EIGEN_SEGMENTEN)
+        ]
         .groupby("partner_name")
         .agg(omzet=("omzet", "sum"), email=("email", "first"))
         .reset_index()
@@ -474,8 +478,8 @@ with tab8:
         .rename(columns={"partner_name": "Klant", "omzet": "Omzet (€)", "email": "E-mail"})
     )
     if not klanten_zonder_label.empty:
-        with st.expander(f"⚠️ {len(klanten_zonder_label)} klanten zonder 'klant:'-label", expanded=True):
-            st.caption("Deze klanten hebben geen label dat begint met 'klant:' in Odoo.")
+        with st.expander(f"⚠️ {len(klanten_zonder_label)} klanten zonder 'klant:'-label", expanded=False):
+            st.caption("Deze klanten hebben geen label dat begint met 'klant:' in Odoo en zijn nog niet ingedeeld in een segment.")
             st.dataframe(
                 klanten_zonder_label.style.format({"Omzet (€)": "€ {:,.0f}"}),
                 use_container_width=True,
@@ -726,7 +730,7 @@ with tab9:
             for rij in df["labels"]
             for lbl in rij
             if lbl.lower().startswith("klant:")
-        }) + ["Hinkelspelwinkels"]
+        }) + ["Hinkelspelwinkels", "Hinkelspel Markten"]
         alle_medewerkers = sorted(lonen_bank_df["partner_name"].dropna().unique())
 
         col_l, col_r = st.columns(2)
@@ -737,7 +741,8 @@ with tab9:
 
         if gekozen_labels and gekozen_medewerkers and gekozen_jaren:
             hinkel = "Hinkelspelwinkels" in gekozen_labels
-            label_selectie = [l for l in gekozen_labels if l != "Hinkelspelwinkels"]
+            hinkel_markten = "Hinkelspel Markten" in gekozen_labels
+            label_selectie = [l for l in gekozen_labels if l not in ("Hinkelspelwinkels", "Hinkelspel Markten")]
             masker = df["labels"].apply(
                 lambda lbls: any(
                     lbl[len("klant:"):].strip() in label_selectie
@@ -747,6 +752,8 @@ with tab9:
             )
             if hinkel:
                 masker = masker | df["partner_name"].str.lower().str.contains("hinkelspelwinkels", na=False)
+            if hinkel_markten:
+                masker = masker | df["partner_name"].str.lower().str.contains("hinkelspel markten", na=False)
             df_jaar_filter = df["maand"].str[:4].isin(gekozen_jaren)
             omzet_seg = df[masker & df_jaar_filter].copy()
             omzet_seg["Periode"] = omzet_seg["maand"].apply(lambda m: _naar_periode(m, granulariteit))
