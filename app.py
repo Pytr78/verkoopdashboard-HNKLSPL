@@ -667,30 +667,43 @@ with tab9:
     try:
         facturen_raw = laad_leveranciersfacturen()
         if facturen_raw:
-            # Sorteer op datum zodat sequentiële toewijzing correct werkt
-            gesorteerd = sorted(facturen_raw, key=lambda x: x["invoice_date"])
-            laatste_maand_per_partner = {}
-            facturen_rows = []
-            for fac in gesorteerd:
+            def _ruwe_maand(d):
+                # Dag 1 → vorige maand (Atipica-patroon: factureert op de 1e voor vorige maand)
+                if d.day == 1:
+                    return pd.Period((d - pd.offsets.MonthEnd(1)).strftime("%Y-%m"), freq="M")
+                return pd.Period(d.strftime("%Y-%m"), freq="M")
+
+            # Pass 1: ruwe maandtoewijzing per factuur, gesorteerd per partner + datum
+            items = []
+            for fac in sorted(facturen_raw, key=lambda x: (x["partner_id"][1] if isinstance(x["partner_id"], list) else "", x["invoice_date"])):
                 d = pd.Timestamp(fac["invoice_date"])
-                partner = fac["partner_id"][1] if isinstance(fac["partner_id"], list) else ""
-                # Dag 1 → vorige maand (Atipica-patroon)
-                maand = pd.Period(
-                    (d - pd.offsets.MonthEnd(1)).strftime("%Y-%m") if d.day == 1 else d.strftime("%Y-%m"),
-                    freq="M"
-                )
-                # Sequentieel: als maand al bezet voor deze partner → volgende maand
-                laatste = laatste_maand_per_partner.get(partner)
-                if laatste is not None and maand <= laatste:
-                    maand = laatste + 1
-                laatste_maand_per_partner[partner] = maand
-                facturen_rows.append({
-                    "maand": str(maand),
-                    "partner_name": partner,
+                items.append({
+                    "d": d,
+                    "maand": _ruwe_maand(d),
+                    "partner_name": fac["partner_id"][1] if isinstance(fac["partner_id"], list) else "",
                     "functie": "Freelancer",
                     "bedrag": float(fac["amount_untaxed"]),
                 })
-            df_fact = pd.DataFrame(facturen_rows)
+
+            # Pass 2: conflict per partner oplossen
+            # Vroege factuur (dag ≤ 7) in conflict → terug naar vorige maand
+            # Late factuur in conflict → door naar volgende maand
+            partner_items = {}
+            for item in items:
+                partner_items.setdefault(item["partner_name"], []).append(item)
+
+            facturen_rows = []
+            for partner, pinv in partner_items.items():
+                for i in range(1, len(pinv)):
+                    if pinv[i]["maand"] == pinv[i - 1]["maand"]:
+                        if pinv[i - 1]["d"].day <= 7:
+                            pinv[i - 1]["maand"] = pinv[i - 1]["maand"] - 1
+                        else:
+                            pinv[i]["maand"] = pinv[i - 1]["maand"] + 1
+                facturen_rows.extend(pinv)
+
+            df_fact = pd.DataFrame([{"maand": str(r["maand"]), "partner_name": r["partner_name"],
+                                     "functie": r["functie"], "bedrag": r["bedrag"]} for r in facturen_rows])
             personen_fact = df_fact["partner_name"].nunique()
             st.caption(f"✅ Leveranciersfacturen (Odoo): {len(df_fact)} rijen, {personen_fact} personen")
             lonen_bank_df = pd.concat([lonen_bank_df, df_fact], ignore_index=True) if lonen_bank_df is not None else df_fact
