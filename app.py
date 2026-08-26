@@ -651,92 +651,123 @@ with tab9:
     st.subheader("Loonkosten (SD Worx export)")
 
     LOONKOST_PAD = os.path.join(os.path.dirname(__file__), "data", "loonkost.xlsx")
+    VENNOTEN_PAD = os.path.join(os.path.dirname(__file__), "data", "loonkost_vennoten.xlsx")
 
-    with st.expander("Excel uploaden (SD Worx)", expanded=not os.path.exists(LOONKOST_PAD)):
-        st.caption("Upload een SD Worx Excel-export. Het bestand wordt opgeslagen en automatisch geladen bij elk volgend bezoek.")
-        geupload = st.file_uploader("SD Worx loonkostenbestand (.xlsx)", type=["xlsx"], key="loonkost_upload")
-        if geupload:
-            with open(LOONKOST_PAD, "wb") as f:
-                f.write(geupload.read())
-            st.success("Bestand opgeslagen — wordt nu gebruikt voor de analyse.")
-            st.rerun()
-        if os.path.exists(LOONKOST_PAD):
-            mtime = os.path.getmtime(LOONKOST_PAD)
-            st.info(f"Huidig bestand: `data/loonkost.xlsx` (geüpload op {pd.Timestamp(mtime, unit='s').strftime('%d/%m/%Y %H:%M')})")
-            if st.button("Bestand verwijderen"):
-                os.remove(LOONKOST_PAD)
+    def _upload_widget(label, pad, key):
+        expanded = not os.path.exists(pad)
+        with st.expander(f"Excel uploaden — {label}", expanded=expanded):
+            st.caption("Het bestand wordt opgeslagen en automatisch geladen bij elk volgend bezoek.")
+            geupload = st.file_uploader(f"{label} (.xlsx)", type=["xlsx"], key=key)
+            if geupload:
+                with open(pad, "wb") as f:
+                    f.write(geupload.read())
+                st.success("Bestand opgeslagen.")
                 st.rerun()
+            if os.path.exists(pad):
+                mtime = os.path.getmtime(pad)
+                st.info(f"Huidig bestand geüpload op {pd.Timestamp(mtime, unit='s').strftime('%d/%m/%Y %H:%M')}")
+                if st.button("Verwijderen", key=f"del_{key}"):
+                    os.remove(pad)
+                    st.rerun()
+
+    col_up1, col_up2 = st.columns(2)
+    with col_up1:
+        _upload_widget("Werknemers (derde tabblad)", LOONKOST_PAD, "loonkost_upload")
+    with col_up2:
+        _upload_widget("Vennoten (eerste tabblad, looncode 001.48)", VENNOTEN_PAD, "vennoten_upload")
+
+    def _laad_werknemers_excel(pad):
+        sdw = pd.read_excel(pad, sheet_name=2)
+        sdw = sdw.rename(columns={
+            "Naam": "partner_name",
+            "Functie": "functie",
+            "Start loonperiode": "start_periode",
+            "Einde loonperiode": "einde_periode",
+            "Totaal Loonkoste": "bedrag",
+        })
+        start = pd.to_datetime(sdw["start_periode"], errors="coerce")
+        einde = pd.to_datetime(sdw["einde_periode"], errors="coerce")
+        sdw["maand"] = start.fillna(einde).dt.to_period("M").astype(str)
+        sdw["bedrag"] = pd.to_numeric(sdw["bedrag"], errors="coerce").fillna(0)
+        return sdw[sdw["maand"].notna()][["maand", "partner_name", "functie", "bedrag"]].copy()
+
+    def _laad_vennoten_excel(pad):
+        sdw = pd.read_excel(pad, sheet_name=0)
+        sdw = sdw[sdw["Looncode"].astype(str).str.strip() == "001.48"]
+        sdw = sdw.rename(columns={
+            "Naam": "partner_name",
+            "Type werknemer": "functie",
+            "Start loonperiode": "start_periode",
+            "Einde loonperiode": "einde_periode",
+            "Bedrag": "bedrag",
+        })
+        start = pd.to_datetime(sdw["start_periode"], errors="coerce")
+        einde = pd.to_datetime(sdw["einde_periode"], errors="coerce")
+        sdw["maand"] = start.fillna(einde).dt.to_period("M").astype(str)
+        sdw["bedrag"] = pd.to_numeric(sdw["bedrag"], errors="coerce").fillna(0)
+        return sdw[sdw["maand"].notna()][["maand", "partner_name", "functie", "bedrag"]].copy()
 
     lonen_bank_df = None
+    frames = []
 
     if os.path.exists(LOONKOST_PAD):
         try:
-            sdw = pd.read_excel(LOONKOST_PAD, sheet_name=2)
-            with st.expander("🔍 Ruwe Excel-rijen (ter diagnose)", expanded=True):
-                st.write("Kolomnamen in Excel:", list(sdw.columns))
-                st.dataframe(sdw.head(20))
-            sdw = sdw.rename(columns={
-                "Naam": "partner_name",
-                "Functie": "functie",
-                "Start loonperiode": "start_periode",
-                "Einde loonperiode": "einde_periode",
-                "Totaal Loonkoste": "bedrag",
-            })
-            start = pd.to_datetime(sdw["start_periode"], errors="coerce")
-            einde = pd.to_datetime(sdw["einde_periode"], errors="coerce")
-            sdw["maand"] = start.fillna(einde).dt.to_period("M").astype(str)
-            sdw["bedrag"] = pd.to_numeric(sdw["bedrag"], errors="coerce").fillna(0)
-            lonen_bank_df = sdw[sdw["maand"].notna()][["maand", "partner_name", "functie", "bedrag"]].copy()
+            frames.append(_laad_werknemers_excel(LOONKOST_PAD))
+        except Exception as e:
+            st.error(f"Fout bij inladen werknemersbestand: {e}")
 
-            maand_df = (
-                lonen_bank_df.groupby("maand")
-                .agg(
-                    totaal=("bedrag", "sum"),
-                    werknemers=("partner_name", lambda x: ", ".join(sorted(x.dropna().unique())))
-                )
-                .reset_index()
-                .sort_values("maand")
-                .rename(columns={"maand": "Maand", "totaal": "Totaal (€)", "werknemers": "Werknemers"})
+    if os.path.exists(VENNOTEN_PAD):
+        try:
+            frames.append(_laad_vennoten_excel(VENNOTEN_PAD))
+        except Exception as e:
+            st.error(f"Fout bij inladen vennotenbestand: {e}")
+
+    if frames:
+        lonen_bank_df = pd.concat(frames, ignore_index=True)
+
+        maand_df = (
+            lonen_bank_df.groupby("maand")
+            .agg(
+                totaal=("bedrag", "sum"),
+                werknemers=("partner_name", lambda x: ", ".join(sorted(x.dropna().unique())))
             )
-            st.subheader("Totaal per maand")
+            .reset_index()
+            .sort_values("maand")
+            .rename(columns={"maand": "Maand", "totaal": "Totaal (€)", "werknemers": "Werknemers"})
+        )
+        st.subheader("Totaal per maand")
+        st.dataframe(
+            maand_df.style.format({"Totaal (€)": "€ {:,.0f}"}),
+            use_container_width=True, hide_index=True,
+        )
+
+        st.subheader("Totaal per functie per maand")
+        functie_df = (
+            lonen_bank_df.groupby(["functie", "maand"])["bedrag"]
+            .sum()
+            .reset_index()
+            .pivot(index="functie", columns="maand", values="bedrag")
+            .fillna(0)
+        )
+        functie_df["Totaal"] = functie_df.sum(axis=1)
+        functie_df = functie_df.sort_values("Totaal", ascending=False)
+        st.dataframe(
+            functie_df.style.format("€ {:,.0f}"),
+            use_container_width=True,
+        )
+
+        with st.expander("Detail per werknemer"):
             st.dataframe(
-                maand_df.style.format({"Totaal (€)": "€ {:,.0f}"}),
+                lonen_bank_df.rename(columns={
+                    "maand": "Maand", "partner_name": "Werknemer",
+                    "functie": "Functie", "bedrag": "Bedrag (€)"
+                })
+                .sort_values(["Maand", "Functie", "Werknemer"])
+                .style.format({"Bedrag (€)": "€ {:,.0f}"}),
                 use_container_width=True, hide_index=True,
             )
-
-            st.subheader("Totaal per functie per maand")
-            functie_df = (
-                lonen_bank_df.groupby(["functie", "maand"])["bedrag"]
-                .sum()
-                .reset_index()
-                .pivot(index="functie", columns="maand", values="bedrag")
-                .fillna(0)
-            )
-            functie_df["Totaal"] = functie_df.sum(axis=1)
-            functie_df = functie_df.sort_values("Totaal", ascending=False)
-            st.dataframe(
-                functie_df.style.format("€ {:,.0f}"),
-                use_container_width=True,
-            )
-
-            niet_herkend = lonen_bank_df[lonen_bank_df["functie"].isna() | (lonen_bank_df["functie"] == "")]["partner_name"].unique()
-            if len(niet_herkend):
-                st.warning(f"Geen functie ingevuld voor: {', '.join(sorted(str(n) for n in niet_herkend))}")
-
-            with st.expander("Detail per werknemer"):
-                st.dataframe(
-                    lonen_bank_df.rename(columns={
-                        "maand": "Maand", "partner_name": "Werknemer",
-                        "functie": "Functie", "bedrag": "Bedrag (€)"
-                    })
-                    .sort_values(["Maand", "Functie", "Werknemer"])
-                    .style.format({"Bedrag (€)": "€ {:,.0f}"}),
-                    use_container_width=True, hide_index=True,
-                )
-        except Exception as e:
-            st.error(f"Fout bij inladen Excel: {e}")
     else:
-        st.info("Upload een SD Worx Excel-bestand via het paneel hierboven om loonkosten te analyseren.")
+        st.info("Upload minstens één SD Worx Excel-bestand via de panelen hierboven.")
 
     if lonen_bank_df is not None:
         st.divider()
