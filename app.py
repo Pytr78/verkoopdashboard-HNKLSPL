@@ -667,18 +667,30 @@ with tab9:
     try:
         facturen_raw = laad_leveranciersfacturen()
         if facturen_raw:
+            # Sorteer op datum zodat sequentiële toewijzing correct werkt
+            gesorteerd = sorted(facturen_raw, key=lambda x: x["invoice_date"])
+            laatste_maand_per_partner = {}
             facturen_rows = []
-            for f in facturen_raw:
-                d = pd.Timestamp(f["invoice_date"])
-                maand = (d - pd.offsets.MonthEnd(1)).strftime("%Y-%m") if d.day == 1 else d.strftime("%Y-%m")
+            for fac in gesorteerd:
+                d = pd.Timestamp(fac["invoice_date"])
+                partner = fac["partner_id"][1] if isinstance(fac["partner_id"], list) else ""
+                # Dag 1 → vorige maand (Atipica-patroon)
+                maand = pd.Period(
+                    (d - pd.offsets.MonthEnd(1)).strftime("%Y-%m") if d.day == 1 else d.strftime("%Y-%m"),
+                    freq="M"
+                )
+                # Sequentieel: als maand al bezet voor deze partner → volgende maand
+                laatste = laatste_maand_per_partner.get(partner)
+                if laatste is not None and maand <= laatste:
+                    maand = laatste + 1
+                laatste_maand_per_partner[partner] = maand
                 facturen_rows.append({
-                    "maand": maand,
-                    "partner_name": f["partner_id"][1] if isinstance(f["partner_id"], list) else "",
+                    "maand": str(maand),
+                    "partner_name": partner,
                     "functie": "Freelancer",
-                    "bedrag": float(f["amount_untaxed"]),
+                    "bedrag": float(fac["amount_untaxed"]),
                 })
             df_fact = pd.DataFrame(facturen_rows)
-            df_fact = df_fact.groupby(["maand", "partner_name", "functie"], as_index=False)["bedrag"].sum()
             personen_fact = df_fact["partner_name"].nunique()
             st.caption(f"✅ Leveranciersfacturen (Odoo): {len(df_fact)} rijen, {personen_fact} personen")
             lonen_bank_df = pd.concat([lonen_bank_df, df_fact], ignore_index=True) if lonen_bank_df is not None else df_fact
