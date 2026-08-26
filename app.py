@@ -801,6 +801,10 @@ with tab9:
             if lbl.lower().startswith("klant:")
         }) + ["Hinkelspelwinkels"]
         alle_medewerkers = sorted(lonen_bank_df["partner_name"].dropna().unique())
+        with st.expander("🔍 Geladen medewerkers (diagnose)"):
+            st.write(f"Totaal {len(alle_medewerkers)} personen, {len(lonen_bank_df)} rijen")
+            st.write(alle_medewerkers)
+            st.write("Functies:", sorted(lonen_bank_df["functie"].dropna().unique().tolist()))
 
         col_l, col_r = st.columns(2)
         with col_l:
