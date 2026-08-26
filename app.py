@@ -716,15 +716,23 @@ with tab9:
 
     if os.path.exists(LOONKOST_PAD):
         try:
-            frames.append(_laad_werknemers_excel(LOONKOST_PAD))
+            df_w = _laad_werknemers_excel(LOONKOST_PAD)
+            frames.append(df_w)
+            st.caption(f"✅ Werknemersbestand geladen: {len(df_w)} rijen, {df_w['partner_name'].nunique()} personen")
         except Exception as e:
             st.error(f"Fout bij inladen werknemersbestand: {e}")
+    else:
+        st.warning("Werknemersbestand niet gevonden — upload het via het paneel hierboven.")
 
     if os.path.exists(VENNOTEN_PAD):
         try:
-            frames.append(_laad_vennoten_excel(VENNOTEN_PAD))
+            df_v = _laad_vennoten_excel(VENNOTEN_PAD)
+            frames.append(df_v)
+            st.caption(f"✅ Vennotenbestand geladen: {len(df_v)} rijen, {df_v['partner_name'].nunique()} personen")
         except Exception as e:
             st.error(f"Fout bij inladen vennotenbestand: {e}")
+    else:
+        st.warning("Vennotenbestand niet gevonden — upload het via het paneel hierboven.")
 
     if frames:
         lonen_bank_df = pd.concat(frames, ignore_index=True)
