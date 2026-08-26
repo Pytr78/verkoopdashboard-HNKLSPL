@@ -940,4 +940,65 @@ with tab10:
                 use_container_width=True,
             )
 
+        st.divider()
+        st.subheader("Rendabiliteit eigen productie vs. personeelskost")
+
+        if lonen_bank_df is None:
+            st.info("Upload SD Worx loonbestanden in het tabblad 'Personeelskosten' om personeelskosten te vergelijken.")
+        else:
+            alle_ep_mw = sorted(lonen_bank_df["partner_name"].dropna().unique())
+            gekozen_ep_mw = st.multiselect("Medewerker(s)", options=alle_ep_mw, default=[], key="ep_mw")
+
+            if gekozen_ep_mw:
+                omzet_agg = ep_filtered.groupby("Periode")["omzet"].sum().reset_index().rename(columns={"omzet": "Omzet (€)"})
+
+                loon_ep = lonen_bank_df[
+                    lonen_bank_df["partner_name"].isin(gekozen_ep_mw) &
+                    lonen_bank_df["maand"].str[:4].isin(ep_jaren)
+                ].copy()
+                loon_ep["Periode"] = loon_ep["maand"].apply(lambda m: _ep_periode(m, ep_gran))
+                loon_agg = loon_ep.groupby("Periode")["bedrag"].sum().reset_index().rename(columns={"bedrag": "Personeelskost (€)"})
+
+                vgl_ep = omzet_agg.merge(loon_agg, on="Periode", how="outer").fillna(0).sort_values("Periode")
+                vgl_ep["Marge (€)"] = vgl_ep["Omzet (€)"] - vgl_ep["Personeelskost (€)"]
+
+                tot_o = vgl_ep["Omzet (€)"].sum()
+                tot_k = vgl_ep["Personeelskost (€)"].sum()
+                tot_m = vgl_ep["Marge (€)"].sum()
+
+                r1, r2, r3, r4 = st.columns(4)
+                r1.metric("Omzet EP", f"€ {tot_o:,.0f}")
+                r2.metric("Personeelskost", f"€ {tot_k:,.0f}")
+                r3.metric("Marge", f"€ {tot_m:,.0f}")
+                r4.metric("Rendabiliteit", f"{tot_m / tot_o * 100:.1f}%" if tot_o else "—")
+
+                st.plotly_chart(
+                    px.bar(
+                        vgl_ep.melt(id_vars="Periode", value_vars=["Omzet (€)", "Personeelskost (€)", "Marge (€)"]),
+                        x="Periode", y="value", color="variable", barmode="group",
+                        labels={"value": "Bedrag (€)", "variable": ""},
+                        title=f"Eigen productie omzet vs. loonkost [{', '.join(gekozen_ep_mw)}]",
+                    ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+                    use_container_width=True,
+                )
+
+                vgl_ep["Kost/Omzet (%)"] = vgl_ep.apply(
+                    lambda r: r["Personeelskost (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] else 0, axis=1
+                )
+                vgl_ep["Rendabiliteit (%)"] = vgl_ep.apply(
+                    lambda r: r["Marge (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] else 0, axis=1
+                )
+                st.dataframe(
+                    vgl_ep.style.format({
+                        "Omzet (€)": "€ {:,.0f}",
+                        "Personeelskost (€)": "€ {:,.0f}",
+                        "Marge (€)": "€ {:,.0f}",
+                        "Kost/Omzet (%)": "{:.1f}%",
+                        "Rendabiliteit (%)": "{:.1f}%",
+                    }),
+                    use_container_width=True, hide_index=True,
+                )
+            else:
+                st.info("Selecteer minstens één medewerker.")
+
 
