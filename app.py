@@ -676,11 +676,14 @@ with tab9:
                 "Naam": "partner_name",
                 "Functie": "functie",
                 "Start loonperiode": "start_periode",
+                "Einde loonperiode": "einde_periode",
                 "Totaal Loonkoste": "bedrag",
             })
-            sdw["maand"] = pd.to_datetime(sdw["start_periode"], dayfirst=True).dt.strftime("%Y-%m")
+            start = pd.to_datetime(sdw["start_periode"], dayfirst=True, errors="coerce")
+            einde = pd.to_datetime(sdw["einde_periode"], dayfirst=True, errors="coerce")
+            sdw["maand"] = start.fillna(einde).dt.strftime("%Y-%m")
             sdw["bedrag"] = pd.to_numeric(sdw["bedrag"], errors="coerce").fillna(0)
-            lonen_bank_df = sdw[["maand", "partner_name", "functie", "bedrag"]].copy()
+            lonen_bank_df = sdw[sdw["maand"].notna()][["maand", "partner_name", "functie", "bedrag"]].copy()
 
             maand_df = (
                 lonen_bank_df.groupby("maand")
