@@ -693,7 +693,7 @@ with tab9:
         return sdw[sdw["maand"].notna()][["maand", "partner_name", "functie", "bedrag"]].copy()
 
     def _laad_vennoten_excel(pad):
-        sdw = pd.read_excel(pad, sheet_name=0)
+        sdw = pd.read_excel(pad, sheet_name=1)
         looncode_col = next((c for c in sdw.columns if c.strip().lower() == "looncode"), None)
         if looncode_col is None:
             raise ValueError(f"Kolom 'Looncode' niet gevonden. Beschikbare kolommen: {list(sdw.columns)}")
