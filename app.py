@@ -697,7 +697,13 @@ with tab9:
         looncode_col = next((c for c in sdw.columns if c.strip().lower() == "looncode"), None)
         if looncode_col is None:
             raise ValueError(f"Kolom 'Looncode' niet gevonden. Beschikbare kolommen: {list(sdw.columns)}")
-        sdw = sdw[sdw[looncode_col].astype(str).str.strip() == "001.48"]
+        unieke_codes = sdw[looncode_col].dropna().unique().tolist()
+        # Vergelijk numeriek (001.48 == 1.48) of als string
+        sdw = sdw[sdw[looncode_col].apply(
+            lambda v: str(v).strip().lstrip("0") == "1.48" or str(v).strip() == "001.48"
+        )]
+        if len(sdw) == 0:
+            raise ValueError(f"Geen rijen met looncode 001.48. Gevonden codes: {unieke_codes[:20]}")
         sdw = sdw.rename(columns={
             "Naam": "partner_name",
             "Type werknemer": "functie",
