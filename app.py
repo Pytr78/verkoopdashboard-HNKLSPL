@@ -742,48 +742,6 @@ with tab9:
 
     if frames:
         lonen_bank_df = pd.concat(frames, ignore_index=True)
-
-        maand_df = (
-            lonen_bank_df.groupby("maand")
-            .agg(
-                totaal=("bedrag", "sum"),
-                werknemers=("partner_name", lambda x: ", ".join(sorted(x.dropna().unique())))
-            )
-            .reset_index()
-            .sort_values("maand")
-            .rename(columns={"maand": "Maand", "totaal": "Totaal (€)", "werknemers": "Werknemers"})
-        )
-        st.subheader("Totaal per maand")
-        st.dataframe(
-            maand_df.style.format({"Totaal (€)": "€ {:,.0f}"}),
-            use_container_width=True, hide_index=True,
-        )
-
-        st.subheader("Totaal per functie per maand")
-        functie_df = (
-            lonen_bank_df.groupby(["functie", "maand"])["bedrag"]
-            .sum()
-            .reset_index()
-            .pivot(index="functie", columns="maand", values="bedrag")
-            .fillna(0)
-        )
-        functie_df["Totaal"] = functie_df.sum(axis=1)
-        functie_df = functie_df.sort_values("Totaal", ascending=False)
-        st.dataframe(
-            functie_df.style.format("€ {:,.0f}"),
-            use_container_width=True,
-        )
-
-        with st.expander("Detail per werknemer"):
-            st.dataframe(
-                lonen_bank_df.rename(columns={
-                    "maand": "Maand", "partner_name": "Werknemer",
-                    "functie": "Functie", "bedrag": "Bedrag (€)"
-                })
-                .sort_values(["Maand", "Functie", "Werknemer"])
-                .style.format({"Bedrag (€)": "€ {:,.0f}"}),
-                use_container_width=True, hide_index=True,
-            )
     else:
         st.info("Upload minstens één SD Worx Excel-bestand via de panelen hierboven.")
 
@@ -799,7 +757,6 @@ with tab9:
                 return str(p.year)
             return maand_str
 
-        # ── Datumfilters ────────────────────────────────────────────────────
         alle_jaren = sorted(lonen_bank_df["maand"].str[:4].unique(), reverse=True)
         cg1, cg2 = st.columns([1, 2])
         with cg1:
@@ -807,7 +764,6 @@ with tab9:
         with cg2:
             gekozen_jaren = st.multiselect("Jaar(en)", options=alle_jaren, default=alle_jaren, key="rend_jaren")
 
-        # ── Selecties ───────────────────────────────────────────────────────
         alle_labels = sorted({
             lbl[len("klant:"):].strip()
             for rij in df["labels"]
@@ -815,10 +771,6 @@ with tab9:
             if lbl.lower().startswith("klant:")
         }) + ["Hinkelspelwinkels"]
         alle_medewerkers = sorted(lonen_bank_df["partner_name"].dropna().unique())
-        with st.expander("🔍 Geladen medewerkers (diagnose)"):
-            st.write(f"Totaal {len(alle_medewerkers)} personen, {len(lonen_bank_df)} rijen")
-            st.write(alle_medewerkers)
-            st.write("Functies:", sorted(lonen_bank_df["functie"].dropna().unique().tolist()))
 
         col_l, col_r = st.columns(2)
         with col_l:
@@ -827,7 +779,6 @@ with tab9:
             gekozen_medewerkers = st.multiselect("Medewerker(s)", options=alle_medewerkers, default=alle_medewerkers[:1] if alle_medewerkers else [])
 
         if gekozen_labels and gekozen_medewerkers and gekozen_jaren:
-            # Omzet – filter op labels en jaren
             hinkel = "Hinkelspelwinkels" in gekozen_labels
             label_selectie = [l for l in gekozen_labels if l != "Hinkelspelwinkels"]
             masker = df["labels"].apply(
@@ -848,18 +799,10 @@ with tab9:
                 .rename(columns={"omzet": "Omzet (€)"})
             )
 
-            # Loonkost – filter op medewerkers en jaren
             loon_jaar_filter = lonen_bank_df["maand"].str[:4].isin(gekozen_jaren)
             loon_gefilterd = lonen_bank_df[
                 lonen_bank_df["partner_name"].isin(gekozen_medewerkers) & loon_jaar_filter
             ].copy()
-            with st.expander("🔍 Gebruikte loonrijen (ter controle)"):
-                st.dataframe(
-                    loon_gefilterd.rename(columns={
-                        "maand": "Maand", "partner_name": "Werknemer", "functie": "Functie", "bedrag": "Bedrag (€)"
-                    }).style.format({"Bedrag (€)": "€ {:,.0f}"}),
-                    use_container_width=True, hide_index=True,
-                )
             loon_gefilterd["Periode"] = loon_gefilterd["maand"].apply(lambda m: _naar_periode(m, granulariteit))
             loon_seg = (
                 loon_gefilterd.groupby("Periode")["bedrag"].sum()
@@ -905,4 +848,35 @@ with tab9:
             )
         else:
             st.info("Selecteer minstens één segment, één medewerker en één jaar.")
+
+        st.divider()
+        with st.expander("Totaal per maand"):
+            maand_df = (
+                lonen_bank_df.groupby("maand")
+                .agg(
+                    totaal=("bedrag", "sum"),
+                    werknemers=("partner_name", lambda x: ", ".join(sorted(x.dropna().unique())))
+                )
+                .reset_index()
+                .sort_values("maand")
+                .rename(columns={"maand": "Maand", "totaal": "Totaal (€)", "werknemers": "Werknemers"})
+            )
+            st.dataframe(maand_df.style.format({"Totaal (€)": "€ {:,.0f}"}), use_container_width=True, hide_index=True)
+
+        with st.expander("Totaal per functie per maand"):
+            functie_df = (
+                lonen_bank_df.groupby(["functie", "maand"])["bedrag"]
+                .sum().reset_index()
+                .pivot(index="functie", columns="maand", values="bedrag").fillna(0)
+            )
+            functie_df["Totaal"] = functie_df.sum(axis=1)
+            st.dataframe(functie_df.sort_values("Totaal", ascending=False).style.format("€ {:,.0f}"), use_container_width=True)
+
+        with st.expander("Detail per werknemer"):
+            st.dataframe(
+                lonen_bank_df.rename(columns={"maand": "Maand", "partner_name": "Werknemer", "functie": "Functie", "bedrag": "Bedrag (€)"})
+                .sort_values(["Maand", "Functie", "Werknemer"])
+                .style.format({"Bedrag (€)": "€ {:,.0f}"}),
+                use_container_width=True, hide_index=True,
+            )
 
