@@ -682,9 +682,9 @@ with tab9:
                 "Einde loonperiode": "einde_periode",
                 "Totaal Loonkoste": "bedrag",
             })
-            start = pd.to_datetime(sdw["start_periode"], dayfirst=True, errors="coerce")
-            einde = pd.to_datetime(sdw["einde_periode"], dayfirst=True, errors="coerce")
-            sdw["maand"] = start.fillna(einde).dt.strftime("%Y-%m")
+            start = pd.to_datetime(sdw["start_periode"], errors="coerce")
+            einde = pd.to_datetime(sdw["einde_periode"], errors="coerce")
+            sdw["maand"] = start.fillna(einde).dt.to_period("M").astype(str)
             sdw["bedrag"] = pd.to_numeric(sdw["bedrag"], errors="coerce").fillna(0)
             lonen_bank_df = sdw[sdw["maand"].notna()][["maand", "partner_name", "functie", "bedrag"]].copy()
 
