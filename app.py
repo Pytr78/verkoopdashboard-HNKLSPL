@@ -720,7 +720,7 @@ with tab9:
 
         col_l, col_r = st.columns(2)
         with col_l:
-            gekozen_labels = st.multiselect("Klantsegment(en)", options=alle_labels, default=alle_labels[:1] if alle_labels else [])
+            gekozen_labels = st.multiselect("Klantsegment(en)", options=alle_labels, default=alle_labels)
         with col_r:
             gekozen_medewerkers = st.multiselect("Medewerker(s)", options=alle_medewerkers, default=alle_medewerkers[:1] if alle_medewerkers else [])
 
