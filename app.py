@@ -836,10 +836,12 @@ with tab9:
         bezoldigingen = loon_df[loon_df["type"] == "Bezoldigingen vennoten"]["debit"].sum()
         huidig_jaar_totaal = loon_df[loon_df["jaar"] == huidig_jaar]["debit"].sum()
 
-        # Facturatie: leveranciersfacturen freelancers uit lonen_bank_df
+        # Facturatie: enkel de 4 bekende freelancers op naam filteren (niet op functie,
+        # want SD Worx-werknemers kunnen ook "Freelancer" als functietitel hebben)
+        FREELANCER_NAMEN = {"Kroketje", "De Cock Gert", "Cold Mountain Management", "Atipica"}
         fact_odoo = pd.DataFrame()
         if lonen_bank_df is not None:
-            fact_odoo = lonen_bank_df[lonen_bank_df["functie"] == "Freelancer"].copy()
+            fact_odoo = lonen_bank_df[lonen_bank_df["partner_name"].isin(FREELANCER_NAMEN)].copy()
             if not fact_odoo.empty:
                 fact_odoo["jaar"] = fact_odoo["maand"].str[:4].astype(int)
         facturatie = fact_odoo["bedrag"].sum() if not fact_odoo.empty else 0
