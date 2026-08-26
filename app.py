@@ -836,11 +836,21 @@ with tab9:
         bezoldigingen = loon_df[loon_df["type"] == "Bezoldigingen vennoten"]["debit"].sum()
         huidig_jaar_totaal = loon_df[loon_df["jaar"] == huidig_jaar]["debit"].sum()
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Totaal personeelskosten", f"€ {totaal:,.0f}")
-        c2.metric(f"Totaal {huidig_jaar}", f"€ {huidig_jaar_totaal:,.0f}")
+        # Facturatie: leveranciersfacturen freelancers uit lonen_bank_df
+        fact_odoo = pd.DataFrame()
+        if lonen_bank_df is not None:
+            fact_odoo = lonen_bank_df[lonen_bank_df["functie"] == "Freelancer"].copy()
+            if not fact_odoo.empty:
+                fact_odoo["jaar"] = fact_odoo["maand"].str[:4].astype(int)
+        facturatie = fact_odoo["bedrag"].sum() if not fact_odoo.empty else 0
+        facturatie_huidig_jaar = fact_odoo[fact_odoo["jaar"] == huidig_jaar]["bedrag"].sum() if not fact_odoo.empty else 0
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Totaal personeelskosten", f"€ {totaal + facturatie:,.0f}")
+        c2.metric(f"Totaal {huidig_jaar}", f"€ {huidig_jaar_totaal + facturatie_huidig_jaar:,.0f}")
         c3.metric("Lonen personeel", f"€ {lonen:,.0f}")
         c4.metric("Bezoldigingen vennoten", f"€ {bezoldigingen:,.0f}")
+        c5.metric("Facturatie", f"€ {facturatie:,.0f}")
 
         st.divider()
 
@@ -849,6 +859,14 @@ with tab9:
             .rename(columns={"jaar": "Jaar", "type": "Type", "debit": "Bedrag (€)"})
         )
         kost_per_jaar["Jaar"] = kost_per_jaar["Jaar"].astype(str)
+        if not fact_odoo.empty:
+            fact_per_jaar = (
+                fact_odoo.groupby("jaar")["bedrag"].sum().reset_index()
+                .rename(columns={"jaar": "Jaar", "bedrag": "Bedrag (€)"})
+            )
+            fact_per_jaar["Type"] = "Facturatie"
+            fact_per_jaar["Jaar"] = fact_per_jaar["Jaar"].astype(str)
+            kost_per_jaar = pd.concat([kost_per_jaar, fact_per_jaar], ignore_index=True)
         st.plotly_chart(
             px.bar(kost_per_jaar, x="Jaar", y="Bedrag (€)", color="Type", barmode="group",
                    text_auto=".3s", title="Personeelskosten per jaar"
