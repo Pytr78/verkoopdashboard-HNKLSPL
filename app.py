@@ -791,12 +791,19 @@ with tab9:
 
             # Loonkost – filter op medewerkers en jaren
             loon_jaar_filter = lonen_bank_df["maand"].str[:4].isin(gekozen_jaren)
-            loon_seg = lonen_bank_df[
+            loon_gefilterd = lonen_bank_df[
                 lonen_bank_df["partner_name"].isin(gekozen_medewerkers) & loon_jaar_filter
             ].copy()
-            loon_seg["Periode"] = loon_seg["maand"].apply(lambda m: _naar_periode(m, granulariteit))
+            with st.expander("🔍 Gebruikte loonrijen (ter controle)"):
+                st.dataframe(
+                    loon_gefilterd.rename(columns={
+                        "maand": "Maand", "partner_name": "Werknemer", "functie": "Functie", "bedrag": "Bedrag (€)"
+                    }).style.format({"Bedrag (€)": "€ {:,.0f}"}),
+                    use_container_width=True, hide_index=True,
+                )
+            loon_gefilterd["Periode"] = loon_gefilterd["maand"].apply(lambda m: _naar_periode(m, granulariteit))
             loon_seg = (
-                loon_seg.groupby("Periode")["bedrag"].sum()
+                loon_gefilterd.groupby("Periode")["bedrag"].sum()
                 .reset_index()
                 .rename(columns={"bedrag": "Personeelskost (€)"})
             )
