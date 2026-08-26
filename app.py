@@ -694,7 +694,10 @@ with tab9:
 
     def _laad_vennoten_excel(pad):
         sdw = pd.read_excel(pad, sheet_name=0)
-        sdw = sdw[sdw["Looncode"].astype(str).str.strip() == "001.48"]
+        looncode_col = next((c for c in sdw.columns if c.strip().lower() == "looncode"), None)
+        if looncode_col is None:
+            raise ValueError(f"Kolom 'Looncode' niet gevonden. Beschikbare kolommen: {list(sdw.columns)}")
+        sdw = sdw[sdw[looncode_col].astype(str).str.strip() == "001.48"]
         sdw = sdw.rename(columns={
             "Naam": "partner_name",
             "Type werknemer": "functie",
