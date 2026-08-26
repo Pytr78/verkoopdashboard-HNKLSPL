@@ -667,39 +667,31 @@ with tab9:
     try:
         facturen_raw = laad_leveranciersfacturen()
         if facturen_raw:
-            def _ruwe_maand(d):
-                # Dag 1 → vorige maand (Atipica-patroon: factureert op de 1e voor vorige maand)
-                if d.day == 1:
-                    return pd.Period((d - pd.offsets.MonthEnd(1)).strftime("%Y-%m"), freq="M")
-                return pd.Period(d.strftime("%Y-%m"), freq="M")
+            # Drempel per partner: dag ≤ drempel → factuur hoort bij vorige maand
+            # De Cock Gert: factureert altijd begin volgende maand (t/m dag 25)
+            # Atipica: factureert op de 1e van de volgende maand
+            PARTNER_DREMPEL = {"De Cock Gert": 25, "Atipica": 1}
 
-            # Pass 1: ruwe maandtoewijzing per factuur, gesorteerd per partner + datum
-            items = []
+            items_per_partner = {}
             for fac in sorted(facturen_raw, key=lambda x: (x["partner_id"][1] if isinstance(x["partner_id"], list) else "", x["invoice_date"])):
                 d = pd.Timestamp(fac["invoice_date"])
-                items.append({
-                    "d": d,
-                    "maand": _ruwe_maand(d),
-                    "partner_name": fac["partner_id"][1] if isinstance(fac["partner_id"], list) else "",
-                    "functie": "Freelancer",
-                    "bedrag": float(fac["amount_untaxed"]),
+                partner = fac["partner_id"][1] if isinstance(fac["partner_id"], list) else ""
+                drempel = PARTNER_DREMPEL.get(partner, 0)
+                if d.day <= drempel:
+                    maand = pd.Period((d - pd.offsets.MonthEnd(1)).strftime("%Y-%m"), freq="M")
+                else:
+                    maand = pd.Period(d.strftime("%Y-%m"), freq="M")
+                items_per_partner.setdefault(partner, []).append({
+                    "d": d, "maand": maand, "partner_name": partner,
+                    "functie": "Freelancer", "bedrag": float(fac["amount_untaxed"]),
                 })
 
-            # Pass 2: conflict per partner oplossen
-            # Vroege factuur (dag ≤ 7) in conflict → terug naar vorige maand
-            # Late factuur in conflict → door naar volgende maand
-            partner_items = {}
-            for item in items:
-                partner_items.setdefault(item["partner_name"], []).append(item)
-
+            # Sequentieel: resterende conflicten oplossen door latere factuur door te schuiven
             facturen_rows = []
-            for partner, pinv in partner_items.items():
+            for partner, pinv in items_per_partner.items():
                 for i in range(1, len(pinv)):
-                    if pinv[i]["maand"] == pinv[i - 1]["maand"]:
-                        if pinv[i - 1]["d"].day <= 7:
-                            pinv[i - 1]["maand"] = pinv[i - 1]["maand"] - 1
-                        else:
-                            pinv[i]["maand"] = pinv[i - 1]["maand"] + 1
+                    if pinv[i]["maand"] <= pinv[i - 1]["maand"]:
+                        pinv[i]["maand"] = pinv[i - 1]["maand"] + 1
                 facturen_rows.extend(pinv)
 
             df_fact = pd.DataFrame([{"maand": str(r["maand"]), "partner_name": r["partner_name"],
