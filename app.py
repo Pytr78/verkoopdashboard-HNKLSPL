@@ -672,6 +672,9 @@ with tab9:
     if os.path.exists(LOONKOST_PAD):
         try:
             sdw = pd.read_excel(LOONKOST_PAD, sheet_name=2)
+            with st.expander("🔍 Ruwe datumwaarden (ter diagnose)", expanded=True):
+                st.write("Kolomnamen in Excel:", list(sdw.columns))
+                st.dataframe(sdw[["Start loonperiode", "Einde loonperiode"]].head(10) if "Start loonperiode" in sdw.columns else sdw.head(10))
             sdw = sdw.rename(columns={
                 "Naam": "partner_name",
                 "Functie": "functie",
