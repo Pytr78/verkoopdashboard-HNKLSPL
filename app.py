@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 import io
 import plotly.express as px
-from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen, fetch_employees, fetch_personeelskosten, fetch_lonen_bankafschriften
+from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen, fetch_employees, fetch_personeelskosten, fetch_lonen_bankafschriften, fetch_leveranciersfacturen
 from src.data_processing import invoices_to_dataframe, omzet_per_partner_per_maand, omzet_per_partner_totaal
 from src.charts import lijndiagram, staafdiagram
 from src.management_summary import bereken_samenvatting
@@ -72,6 +72,10 @@ def laad_personeelskosten():
 @st.cache_data(ttl=86400)
 def laad_lonen_bankafschriften():
     return fetch_lonen_bankafschriften()
+
+@st.cache_data(ttl=86400)
+def laad_leveranciersfacturen():
+    return fetch_leveranciersfacturen()
 
 
 with st.spinner("Data ophalen uit Odoo..."):
@@ -658,6 +662,28 @@ with tab9:
         lonen_bank_df = pd.concat(frames, ignore_index=True)
     else:
         st.info("Upload minstens één SD Worx Excel-bestand via de panelen hierboven.")
+
+    # ── Leveranciersfacturen uit Odoo ───────────────────────────────────────
+    try:
+        facturen_raw = laad_leveranciersfacturen()
+        if facturen_raw:
+            facturen_rows = []
+            for f in facturen_raw:
+                d = pd.Timestamp(f["invoice_date"])
+                maand = (d - pd.offsets.MonthEnd(1)).strftime("%Y-%m") if d.day == 1 else d.strftime("%Y-%m")
+                facturen_rows.append({
+                    "maand": maand,
+                    "partner_name": f["partner_id"][1] if isinstance(f["partner_id"], list) else "",
+                    "functie": "Freelancer",
+                    "bedrag": float(f["amount_untaxed"]),
+                })
+            df_fact = pd.DataFrame(facturen_rows)
+            df_fact = df_fact.groupby(["maand", "partner_name", "functie"], as_index=False)["bedrag"].sum()
+            personen_fact = df_fact["partner_name"].nunique()
+            st.caption(f"✅ Leveranciersfacturen (Odoo): {len(df_fact)} rijen, {personen_fact} personen")
+            lonen_bank_df = pd.concat([lonen_bank_df, df_fact], ignore_index=True) if lonen_bank_df is not None else df_fact
+    except Exception as e:
+        st.error(f"Fout bij laden leveranciersfacturen: {e}")
 
     if lonen_bank_df is not None:
         st.divider()

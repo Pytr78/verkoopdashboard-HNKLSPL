@@ -167,6 +167,26 @@ def fetch_personeelskosten() -> list:
     return lines
 
 
+FREELANCER_PARTNER_IDS = [4682, 4858, 4909, 5305]  # Atipica, Cold Mountain, De Cock Gert, Kroketje
+
+def fetch_leveranciersfacturen() -> list:
+    uid = get_uid()
+    models = get_models()
+    return models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "account.move", "search_read",
+        [[
+            ["move_type", "=", "in_invoice"],
+            ["state", "=", "posted"],
+            ["partner_id", "in", FREELANCER_PARTNER_IDS],
+        ]],
+        {
+            "fields": ["name", "partner_id", "invoice_date", "amount_untaxed"],
+            "order": "invoice_date asc",
+        }
+    )
+
+
 def fetch_employees() -> list:
     uid = get_uid()
     models = get_models()
