@@ -169,6 +169,18 @@ def fetch_personeelskosten() -> list:
 
 FREELANCER_PARTNER_IDS = [4682, 4858, 4909, 5305]  # Atipica, Cold Mountain, De Cock Gert, Kroketje
 
+# Odoo product category IDs voor eigen productie, per merk
+EIGEN_PRODUCTIE_CATEGORIEEN = {
+    64: ("Cabriogand",       "Geitenmelk"),
+    65: ("Cabriolait",       "Geitenmelk"),
+    66: ("Pas de bleu Geit", "Geitenmelk"),
+    71: ("Bellie",           "Koemelk"),
+    72: ("Dulses",           "Koemelk"),
+    73: ("Herbie",           "Koemelk"),
+    74: ("Pas de bleu",      "Koemelk"),
+    75: ("Pas de rouge",     "Koemelk"),
+}
+
 def fetch_leveranciersfacturen() -> list:
     uid = get_uid()
     models = get_models()
@@ -185,6 +197,56 @@ def fetch_leveranciersfacturen() -> list:
             "order": "invoice_date asc",
         }
     )
+
+
+def fetch_omzet_eigen_productie() -> list:
+    uid = get_uid()
+    models = get_models()
+
+    cat_ids = list(EIGEN_PRODUCTIE_CATEGORIEEN.keys())
+
+    templates = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "product.template", "search_read",
+        [[["categ_id", "in", cat_ids]]],
+        {"fields": ["id", "categ_id"]}
+    )
+    tmpl_cat = {t["id"]: t["categ_id"][0] for t in templates}
+
+    variants = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "product.product", "search_read",
+        [[["product_tmpl_id", "in", list(tmpl_cat.keys())]]],
+        {"fields": ["id", "product_tmpl_id"]}
+    )
+    variant_cat = {
+        v["id"]: tmpl_cat[v["product_tmpl_id"][0]]
+        for v in variants
+        if isinstance(v["product_tmpl_id"], list) and v["product_tmpl_id"][0] in tmpl_cat
+    }
+
+    if not variant_cat:
+        return []
+
+    lines = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "account.move.line", "search_read",
+        [[
+            ["product_id", "in", list(variant_cat.keys())],
+            ["move_id.move_type", "=", "out_invoice"],
+            ["move_id.state", "=", "posted"],
+        ]],
+        {"fields": ["id", "product_id", "price_subtotal", "date"]}
+    )
+
+    for line in lines:
+        prod_id = line["product_id"][0] if isinstance(line["product_id"], list) else None
+        cat_id = variant_cat.get(prod_id)
+        merk, hogere_cat = EIGEN_PRODUCTIE_CATEGORIEEN.get(cat_id, ("Onbekend", "Onbekend"))
+        line["merk"] = merk
+        line["hogere_categorie"] = hogere_cat
+
+    return lines
 
 
 def fetch_employees() -> list:

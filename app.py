@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 import io
 import plotly.express as px
-from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen, fetch_employees, fetch_personeelskosten, fetch_lonen_bankafschriften, fetch_leveranciersfacturen
+from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen, fetch_employees, fetch_personeelskosten, fetch_lonen_bankafschriften, fetch_leveranciersfacturen, fetch_omzet_eigen_productie
 from src.data_processing import invoices_to_dataframe, omzet_per_partner_per_maand, omzet_per_partner_totaal
 from src.charts import lijndiagram, staafdiagram
 from src.management_summary import bereken_samenvatting
@@ -77,6 +77,10 @@ def laad_lonen_bankafschriften():
 def laad_leveranciersfacturen():
     return fetch_leveranciersfacturen()
 
+@st.cache_data(ttl=86400)
+def laad_omzet_eigen_productie():
+    return fetch_omzet_eigen_productie()
+
 
 with st.spinner("Data ophalen uit Odoo..."):
     df = laad_data()
@@ -125,7 +129,7 @@ col4.metric("Aantal facturen", len(df_gefilterd))
 st.divider()
 
 # --- Tabs ---
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "🚨 Actiepunten",
     "🎯 Doelstellingen",
     "📊 Grafieken",
@@ -135,6 +139,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "💰 Cashflow",
     "🏷️ Segmentatie per label",
     "👷 Personeelskosten",
+    "🧀 Eigen Productie",
 ])
 
 # ── Tab 1: Actiepunten ──────────────────────────────────────────────────────
@@ -843,6 +848,96 @@ with tab9:
                 .rename(columns={"werknemers": "Werknemers"})
                 .sort_values("Werknemers", ascending=False),
                 use_container_width=True, hide_index=True,
+            )
+
+# ── Tab 10: Eigen Productie ─────────────────────────────────────────────────
+with tab10:
+    st.header("Omzet Eigen Productie")
+
+    try:
+        ep_raw = laad_omzet_eigen_productie()
+    except Exception as e:
+        st.error(f"Fout bij laden eigen productie data: {e}")
+        ep_raw = []
+
+    if not ep_raw:
+        st.info("Geen data beschikbaar.")
+    else:
+        ep_df = pd.DataFrame([{
+            "maand": r["date"][:7],
+            "merk": r["merk"],
+            "hogere_categorie": r["hogere_categorie"],
+            "omzet": float(r["price_subtotal"]),
+        } for r in ep_raw if r.get("date")])
+
+        alle_ep_jaren = sorted(ep_df["maand"].str[:4].unique(), reverse=True)
+        cep1, cep2 = st.columns([1, 2])
+        with cep1:
+            ep_gran = st.selectbox("Toon per", ["Maand", "Kwartaal", "Jaar"], key="ep_gran")
+        with cep2:
+            ep_jaren = st.multiselect("Jaar(en)", alle_ep_jaren, default=alle_ep_jaren, key="ep_jaren")
+
+        def _ep_periode(maand_str, gran):
+            p = pd.Period(maand_str, freq="M")
+            if gran == "Kwartaal":
+                return f"{p.year}-K{p.quarter}"
+            if gran == "Jaar":
+                return str(p.year)
+            return maand_str
+
+        ep_filtered = ep_df[ep_df["maand"].str[:4].isin(ep_jaren)].copy()
+        ep_filtered["Periode"] = ep_filtered["maand"].apply(lambda m: _ep_periode(m, ep_gran))
+
+        # Totaalcijfers
+        totaal_ep = ep_filtered["omzet"].sum()
+        totaal_geit = ep_filtered[ep_filtered["hogere_categorie"] == "Geitenmelk"]["omzet"].sum()
+        totaal_koe = ep_filtered[ep_filtered["hogere_categorie"] == "Koemelk"]["omzet"].sum()
+        mc1, mc2, mc3 = st.columns(3)
+        mc1.metric("Totaal eigen productie", f"€ {totaal_ep:,.0f}")
+        mc2.metric("Geitenmelk", f"€ {totaal_geit:,.0f}")
+        mc3.metric("Koemelk", f"€ {totaal_koe:,.0f}")
+
+        st.divider()
+
+        # Hogere categorie
+        st.subheader("Per hogere categorie")
+        cat_df = ep_filtered.groupby(["Periode", "hogere_categorie"])["omzet"].sum().reset_index()
+        st.plotly_chart(
+            px.bar(
+                cat_df, x="Periode", y="omzet", color="hogere_categorie", barmode="stack",
+                labels={"omzet": "Omzet (€)", "hogere_categorie": "Categorie"},
+                title="Omzet eigen productie per hogere categorie",
+            ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+            use_container_width=True,
+        )
+
+        st.divider()
+
+        # Per merk
+        st.subheader("Per merk")
+        merk_df = ep_filtered.groupby(["Periode", "merk", "hogere_categorie"])["omzet"].sum().reset_index()
+        st.plotly_chart(
+            px.bar(
+                merk_df, x="Periode", y="omzet", color="merk", barmode="stack",
+                facet_row="hogere_categorie",
+                labels={"omzet": "Omzet (€)", "merk": "Merk", "hogere_categorie": ""},
+                title="Omzet per merk",
+            ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+            use_container_width=True,
+        )
+
+        st.divider()
+
+        with st.expander("Overzicht per merk per periode"):
+            pivot_ep = ep_filtered.pivot_table(
+                index="merk", columns="Periode", values="omzet", aggfunc="sum", fill_value=0
+            )
+            pivot_ep.insert(0, "Categorie", ep_filtered.groupby("merk")["hogere_categorie"].first())
+            pivot_ep["Totaal"] = pivot_ep.drop(columns="Categorie").sum(axis=1)
+            st.dataframe(
+                pivot_ep.sort_values(["Categorie", "Totaal"], ascending=[True, False])
+                .style.format({c: "€ {:,.0f}" for c in pivot_ep.columns if c != "Categorie"}),
+                use_container_width=True,
             )
 
 
