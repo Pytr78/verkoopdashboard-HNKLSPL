@@ -675,7 +675,7 @@ with tab9:
     with col_up1:
         _upload_widget("Werknemers (derde tabblad)", LOONKOST_PAD, "loonkost_upload")
     with col_up2:
-        _upload_widget("Vennoten (eerste tabblad, looncode 001.48)", VENNOTEN_PAD, "vennoten_upload")
+        _upload_widget("Vennoten (tweede tabblad, looncode 001.48)", VENNOTEN_PAD, "vennoten_upload")
 
     def _laad_werknemers_excel(pad):
         sdw = pd.read_excel(pad, sheet_name=2)
