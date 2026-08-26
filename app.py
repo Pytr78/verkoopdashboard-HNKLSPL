@@ -648,125 +648,127 @@ with tab9:
             )
 
     st.divider()
-    st.subheader("Loonbetalingen uit bankafschriften")
+    st.subheader("Loonkosten (SD Worx export)")
 
-    lonen_bank_raw = laad_lonen_bankafschriften()
+    LOONKOST_PAD = os.path.join(os.path.dirname(__file__), "data", "loonkost.xlsx")
 
-    if not lonen_bank_raw:
-        st.info("Geen loonbetalingen gevonden in bankafschriften (zoekt op /A/ in communicatie).")
-    else:
-        lonen_bank_df = pd.DataFrame(lonen_bank_raw)
+    with st.expander("Excel uploaden (SD Worx)", expanded=not os.path.exists(LOONKOST_PAD)):
+        st.caption("Upload een SD Worx Excel-export. Het bestand wordt opgeslagen en automatisch geladen bij elk volgend bezoek.")
+        geupload = st.file_uploader("SD Worx loonkostenbestand (.xlsx)", type=["xlsx"], key="loonkost_upload")
+        if geupload:
+            with open(LOONKOST_PAD, "wb") as f:
+                f.write(geupload.read())
+            st.success("Bestand opgeslagen — wordt nu gebruikt voor de analyse.")
+            st.rerun()
+        if os.path.exists(LOONKOST_PAD):
+            mtime = os.path.getmtime(LOONKOST_PAD)
+            st.info(f"Huidig bestand: `data/loonkost.xlsx` (geüpload op {pd.Timestamp(mtime, unit='s').strftime('%d/%m/%Y %H:%M')})")
+            if st.button("Bestand verwijderen"):
+                os.remove(LOONKOST_PAD)
+                st.rerun()
 
-        def _extract_maand(ref: str, datum: str) -> str:
-            m = re.search(r'\b(\d{2})/(\d{4})\b', ref or "")
-            if m:
-                return f"{m.group(2)}-{m.group(1)}"
-            return pd.to_datetime(datum).strftime("%Y-%m")
+    lonen_bank_df = None
 
-        lonen_bank_df["maand"] = lonen_bank_df.apply(
-            lambda r: _extract_maand(r.get("payment_ref", ""), r["date"]), axis=1
-        )
-        lonen_bank_df["bedrag"] = lonen_bank_df["amount"].abs()
-        lonen_bank_df["journaal"] = lonen_bank_df["journal_id"].apply(
-            lambda x: x[1] if isinstance(x, list) else "—"
-        )
+    if os.path.exists(LOONKOST_PAD):
+        try:
+            sdw = pd.read_excel(LOONKOST_PAD, sheet_name=2)
+            sdw = sdw.rename(columns={
+                "Naam": "partner_name",
+                "Functie": "functie",
+                "Start loonperiode": "start_periode",
+                "Totaal Loonkoste": "bedrag",
+            })
+            sdw["maand"] = pd.to_datetime(sdw["start_periode"], dayfirst=True).dt.strftime("%Y-%m")
+            sdw["bedrag"] = pd.to_numeric(sdw["bedrag"], errors="coerce").fillna(0)
+            lonen_bank_df = sdw[["maand", "partner_name", "functie", "bedrag"]].copy()
 
-        # Match werknemer aan functie via Odoo HR
-        import unicodedata
-
-        # Aliassen voor namen die anders staan in de bank dan in Odoo
-        NAAM_ALIASSEN = {
-            "lauwaert a. - van alphen t": "Van Alphen Tessa",
-            "van assche emile": "Van Assche Juno",
-        }
-
-        def _normaliseer(tekst: str) -> set:
-            genormaliseerd = unicodedata.normalize("NFD", tekst).encode("ascii", "ignore").decode("utf-8")
-            return {w.lower() for w in genormaliseerd.split() if len(w) > 2}
-
-        def _odoo_naam(bank_naam: str) -> str:
-            alias = NAAM_ALIASSEN.get(bank_naam.lower().strip())
-            return alias if alias else bank_naam
-
-        def _match_functie(bank_naam: str) -> str:
-            if not bank_naam:
-                return "Onbekend"
-            opgezocht = _odoo_naam(bank_naam)
-            woorden = _normaliseer(opgezocht)
-            for e in werknemers_raw:
-                if woorden and _normaliseer(e["name"]) == woorden:
-                    return e["job_id"][1] if isinstance(e.get("job_id"), list) else "Onbekend"
-            return "Onbekend"
-
-        lonen_bank_df["functie"] = lonen_bank_df["partner_name"].apply(_match_functie)
-
-        # Overzicht per maand
-        maand_df = (
-            lonen_bank_df.groupby("maand")
-            .agg(
-                totaal=("bedrag", "sum"),
-                werknemers=("partner_name", lambda x: ", ".join(sorted(x.dropna().unique())))
+            maand_df = (
+                lonen_bank_df.groupby("maand")
+                .agg(
+                    totaal=("bedrag", "sum"),
+                    werknemers=("partner_name", lambda x: ", ".join(sorted(x.dropna().unique())))
+                )
+                .reset_index()
+                .sort_values("maand")
+                .rename(columns={"maand": "Maand", "totaal": "Totaal (€)", "werknemers": "Werknemers"})
             )
-            .reset_index()
-            .sort_values("maand")
-            .rename(columns={"maand": "Maand", "totaal": "Totaal (€)", "werknemers": "Werknemers"})
-        )
-        st.subheader("Totaal per maand")
-        st.dataframe(
-            maand_df.style.format({"Totaal (€)": "€ {:,.0f}"}),
-            use_container_width=True, hide_index=True,
-        )
-
-        st.subheader("Totaal per functie per maand")
-        functie_df = (
-            lonen_bank_df.groupby(["functie", "maand"])["bedrag"]
-            .sum()
-            .reset_index()
-            .pivot(index="functie", columns="maand", values="bedrag")
-            .fillna(0)
-        )
-        functie_df["Totaal"] = functie_df.sum(axis=1)
-        functie_df = functie_df.sort_values("Totaal", ascending=False)
-        st.dataframe(
-            functie_df.style.format("€ {:,.0f}"),
-            use_container_width=True,
-        )
-
-        niet_herkend = lonen_bank_df[lonen_bank_df["functie"] == "Onbekend"]["partner_name"].unique()
-        if len(niet_herkend):
-            st.warning(f"Niet gekoppeld aan functie: {', '.join(sorted(niet_herkend))}")
-
-        # Detail per werknemer
-        with st.expander("Detail per werknemer"):
+            st.subheader("Totaal per maand")
             st.dataframe(
-                lonen_bank_df[["date", "maand", "partner_name", "functie", "payment_ref", "bedrag"]]
-                .rename(columns={"date": "Datum", "maand": "Maand", "partner_name": "Werknemer",
-                                 "functie": "Functie", "payment_ref": "Omschrijving", "bedrag": "Bedrag (€)"})
-                .sort_values(["Maand", "Functie", "Werknemer"])
-                .style.format({"Bedrag (€)": "€ {:,.0f}"}),
+                maand_df.style.format({"Totaal (€)": "€ {:,.0f}"}),
                 use_container_width=True, hide_index=True,
             )
 
+            st.subheader("Totaal per functie per maand")
+            functie_df = (
+                lonen_bank_df.groupby(["functie", "maand"])["bedrag"]
+                .sum()
+                .reset_index()
+                .pivot(index="functie", columns="maand", values="bedrag")
+                .fillna(0)
+            )
+            functie_df["Totaal"] = functie_df.sum(axis=1)
+            functie_df = functie_df.sort_values("Totaal", ascending=False)
+            st.dataframe(
+                functie_df.style.format("€ {:,.0f}"),
+                use_container_width=True,
+            )
+
+            niet_herkend = lonen_bank_df[lonen_bank_df["functie"].isna() | (lonen_bank_df["functie"] == "")]["partner_name"].unique()
+            if len(niet_herkend):
+                st.warning(f"Geen functie ingevuld voor: {', '.join(sorted(str(n) for n in niet_herkend))}")
+
+            with st.expander("Detail per werknemer"):
+                st.dataframe(
+                    lonen_bank_df.rename(columns={
+                        "maand": "Maand", "partner_name": "Werknemer",
+                        "functie": "Functie", "bedrag": "Bedrag (€)"
+                    })
+                    .sort_values(["Maand", "Functie", "Werknemer"])
+                    .style.format({"Bedrag (€)": "€ {:,.0f}"}),
+                    use_container_width=True, hide_index=True,
+                )
+        except Exception as e:
+            st.error(f"Fout bij inladen Excel: {e}")
+    else:
+        st.info("Upload een SD Worx Excel-bestand via het paneel hierboven om loonkosten te analyseren.")
+
+    if lonen_bank_df is not None:
         st.divider()
         st.subheader("Rendabiliteit per segment vs. personeelskost")
 
-        # Labels uit facturen (klant: prefix) + Hinkelspelwinkels als klantnaam
+        def _naar_periode(maand_str: str, granulariteit: str) -> str:
+            p = pd.Period(maand_str, freq="M")
+            if granulariteit == "Kwartaal":
+                return f"{p.year}-K{p.quarter}"
+            if granulariteit == "Jaar":
+                return str(p.year)
+            return maand_str
+
+        # ── Datumfilters ────────────────────────────────────────────────────
+        alle_jaren = sorted(lonen_bank_df["maand"].str[:4].unique(), reverse=True)
+        cg1, cg2 = st.columns([1, 2])
+        with cg1:
+            granulariteit = st.selectbox("Toon per", ["Maand", "Kwartaal", "Jaar"], key="rend_gran")
+        with cg2:
+            gekozen_jaren = st.multiselect("Jaar(en)", options=alle_jaren, default=alle_jaren, key="rend_jaren")
+
+        # ── Selecties ───────────────────────────────────────────────────────
         alle_labels = sorted({
             lbl[len("klant:"):].strip()
             for rij in df["labels"]
             for lbl in rij
             if lbl.lower().startswith("klant:")
         }) + ["Hinkelspelwinkels"]
-        alle_functies = sorted(lonen_bank_df[lonen_bank_df["functie"] != "Onbekend"]["functie"].unique())
+        alle_medewerkers = sorted(lonen_bank_df["partner_name"].dropna().unique())
 
         col_l, col_r = st.columns(2)
         with col_l:
             gekozen_labels = st.multiselect("Klantsegment(en)", options=alle_labels, default=alle_labels[:1] if alle_labels else [])
         with col_r:
-            gekozen_functies = st.multiselect("Personeelsfunctie(s)", options=alle_functies, default=alle_functies[:1] if alle_functies else [])
+            gekozen_medewerkers = st.multiselect("Medewerker(s)", options=alle_medewerkers, default=alle_medewerkers[:1] if alle_medewerkers else [])
 
-        if gekozen_labels and gekozen_functies:
-            # Omzet gefilterd op gekozen labels (+ Hinkelspelwinkels als klantnaam)
+        if gekozen_labels and gekozen_medewerkers and gekozen_jaren:
+            # Omzet – filter op labels en jaren
             hinkel = "Hinkelspelwinkels" in gekozen_labels
             label_selectie = [l for l in gekozen_labels if l != "Hinkelspelwinkels"]
             masker = df["labels"].apply(
@@ -778,21 +780,28 @@ with tab9:
             )
             if hinkel:
                 masker = masker | df["partner_name"].str.lower().str.contains("hinkelspelwinkels", na=False)
+            df_jaar_filter = df["maand"].str[:4].isin(gekozen_jaren)
+            omzet_seg = df[masker & df_jaar_filter].copy()
+            omzet_seg["Periode"] = omzet_seg["maand"].apply(lambda m: _naar_periode(m, granulariteit))
             omzet_seg = (
-                df[masker].groupby("maand")["omzet"].sum()
+                omzet_seg.groupby("Periode")["omzet"].sum()
                 .reset_index()
-                .rename(columns={"maand": "Maand", "omzet": "Omzet (€)"})
+                .rename(columns={"omzet": "Omzet (€)"})
             )
 
-            # Loonkost gefilterd op gekozen functies
+            # Loonkost – filter op medewerkers en jaren
+            loon_jaar_filter = lonen_bank_df["maand"].str[:4].isin(gekozen_jaren)
+            loon_seg = lonen_bank_df[
+                lonen_bank_df["partner_name"].isin(gekozen_medewerkers) & loon_jaar_filter
+            ].copy()
+            loon_seg["Periode"] = loon_seg["maand"].apply(lambda m: _naar_periode(m, granulariteit))
             loon_seg = (
-                lonen_bank_df[lonen_bank_df["functie"].isin(gekozen_functies)]
-                .groupby("maand")["bedrag"].sum()
+                loon_seg.groupby("Periode")["bedrag"].sum()
                 .reset_index()
-                .rename(columns={"maand": "Maand", "bedrag": "Personeelskost (€)"})
+                .rename(columns={"bedrag": "Personeelskost (€)"})
             )
 
-            vergelijk = omzet_seg.merge(loon_seg, on="Maand", how="outer").fillna(0).sort_values("Maand")
+            vergelijk = omzet_seg.merge(loon_seg, on="Periode", how="outer").fillna(0).sort_values("Periode")
             vergelijk["Marge (€)"] = vergelijk["Omzet (€)"] - vergelijk["Personeelskost (€)"]
 
             totaal_omzet = vergelijk["Omzet (€)"].sum()
@@ -807,10 +816,10 @@ with tab9:
 
             st.plotly_chart(
                 px.bar(
-                    vergelijk.melt(id_vars="Maand", value_vars=["Omzet (€)", "Personeelskost (€)", "Marge (€)"]),
-                    x="Maand", y="value", color="variable", barmode="group",
+                    vergelijk.melt(id_vars="Periode", value_vars=["Omzet (€)", "Personeelskost (€)", "Marge (€)"]),
+                    x="Periode", y="value", color="variable", barmode="group",
                     labels={"value": "Bedrag (€)", "variable": ""},
-                    title=f"Omzet [{', '.join(gekozen_labels)}] vs. loonkost [{', '.join(gekozen_functies)}]",
+                    title=f"Omzet [{', '.join(gekozen_labels)}] vs. loonkost [{', '.join(gekozen_medewerkers)}]",
                 ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
                 use_container_width=True,
             )
@@ -829,5 +838,5 @@ with tab9:
                 use_container_width=True, hide_index=True,
             )
         else:
-            st.info("Selecteer minstens één segment en één functie.")
+            st.info("Selecteer minstens één segment, één medewerker en één jaar.")
 
