@@ -623,7 +623,7 @@ with tab9:
         wdf = pd.DataFrame(werknemers_raw)
         wdf["functie"] = wdf["job_id"].apply(lambda x: x[1] if isinstance(x, list) else (x or ""))
         wdf["afdeling"] = wdf["department_id"].apply(lambda x: x[1] if isinstance(x, list) else (x or ""))
-        wdf["functietitel"] = wdf["job_title"].fillna("")
+        wdf["functietitel"] = wdf["job_title"].apply(lambda x: x if isinstance(x, str) else "")
         wdf = wdf[["name", "functie", "functietitel", "afdeling"]].rename(columns={
             "name": "Werknemer", "functie": "Functie", "functietitel": "Functietitel", "afdeling": "Afdeling"
         })
