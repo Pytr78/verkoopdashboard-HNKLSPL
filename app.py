@@ -562,93 +562,8 @@ with tab8:
 # ── Tab 9: Personeelskosten ─────────────────────────────────────────────────
 with tab9:
     st.header("Personeelskosten")
-    st.caption("Overzicht werknemers per functie en loonkosten via rekening 'Te betalen Lonen'")
 
-    loon_raw = laad_personeelskosten()
-    if loon_raw:
-        loon_df = pd.DataFrame(loon_raw)
-        loon_df["date"] = pd.to_datetime(loon_df["date"])
-        loon_df["jaar"] = loon_df["date"].dt.year
-        loon_df["maand"] = loon_df["date"].dt.to_period("M").astype(str)
-        loon_df["name"] = loon_df["name"].apply(lambda x: x if isinstance(x, str) else "")
-        loon_df["partner"] = loon_df["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
-        loon_df["rekening"] = loon_df["account_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
-        loon_df["type"] = loon_df["rekening"].apply(
-            lambda r: "Bezoldigingen vennoten" if "bezoldiging" in r.lower() else "Lonen personeel"
-        )
-
-        huidig_jaar = pd.Timestamp.now().year
-        totaal = loon_df["debit"].sum()
-        lonen = loon_df[loon_df["type"] == "Lonen personeel"]["debit"].sum()
-        bezoldigingen = loon_df[loon_df["type"] == "Bezoldigingen vennoten"]["debit"].sum()
-        huidig_jaar_totaal = loon_df[loon_df["jaar"] == huidig_jaar]["debit"].sum()
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Totaal personeelskosten", f"€ {totaal:,.0f}")
-        c2.metric(f"Totaal {huidig_jaar}", f"€ {huidig_jaar_totaal:,.0f}")
-        c3.metric("Lonen personeel", f"€ {lonen:,.0f}")
-        c4.metric("Bezoldigingen vennoten", f"€ {bezoldigingen:,.0f}")
-
-        st.divider()
-
-        kost_per_jaar = (
-            loon_df.groupby(["jaar", "type"])["debit"].sum().reset_index()
-            .rename(columns={"jaar": "Jaar", "type": "Type", "debit": "Bedrag (€)"})
-        )
-        kost_per_jaar["Jaar"] = kost_per_jaar["Jaar"].astype(str)
-        st.plotly_chart(
-            px.bar(kost_per_jaar, x="Jaar", y="Bedrag (€)", color="Type", barmode="group",
-                   text_auto=".3s", title="Personeelskosten per jaar"
-                   ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
-            use_container_width=True,
-        )
-
-        with st.expander("Detail boekingen"):
-            st.dataframe(
-                loon_df[["date", "maand", "type", "partner", "name", "debit", "rekening"]]
-                .rename(columns={"date": "Datum", "maand": "Maand", "type": "Type", "partner": "Tegenpartij",
-                                 "name": "Omschrijving", "debit": "Bedrag (€)", "rekening": "Rekening"})
-                .sort_values("Datum", ascending=False)
-                .style.format({"Bedrag (€)": "€ {:,.0f}"}),
-                use_container_width=True, hide_index=True,
-            )
-    else:
-        st.info("Geen boekingen gevonden op 'Te betalen Lonen' of 'Te betalen Bezoldigingen'. Controleer de rekeningnamen in Odoo.")
-
-    st.divider()
-    werknemers_raw = laad_werknemers()
-
-    if not werknemers_raw:
-        st.warning("Geen werknemers gevonden. Controleer of de HR-module actief is in Odoo.")
-    else:
-        wdf = pd.DataFrame(werknemers_raw)
-        wdf["functie"] = wdf["job_id"].apply(lambda x: x[1] if isinstance(x, list) else (x or ""))
-        wdf["afdeling"] = wdf["department_id"].apply(lambda x: x[1] if isinstance(x, list) else (x or ""))
-        wdf["functietitel"] = wdf["job_title"].apply(lambda x: x if isinstance(x, str) else "")
-        wdf = wdf[["name", "functie", "functietitel", "afdeling"]].rename(columns={
-            "name": "Werknemer", "functie": "Functie", "functietitel": "Functietitel", "afdeling": "Afdeling"
-        })
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Aantal werknemers", len(wdf))
-        col2.metric("Aantal functies", wdf["Functie"].nunique())
-        col3.metric("Aantal afdelingen", wdf["Afdeling"].nunique())
-
-        st.divider()
-
-        filter_afd = st.selectbox("Filter op afdeling", options=["Alle"] + sorted(wdf["Afdeling"].unique().tolist()))
-        weergave = wdf if filter_afd == "Alle" else wdf[wdf["Afdeling"] == filter_afd]
-        st.dataframe(weergave.sort_values(["Afdeling", "Functie", "Werknemer"]), use_container_width=True, hide_index=True)
-
-        with st.expander("Werknemers per afdeling"):
-            st.dataframe(
-                wdf.groupby("Afdeling").agg(werknemers=("Werknemer", "count")).reset_index()
-                .rename(columns={"werknemers": "Werknemers"})
-                .sort_values("Werknemers", ascending=False),
-                use_container_width=True, hide_index=True,
-            )
-
-    st.divider()
+    # ── SD Worx upload ──────────────────────────────────────────────────────
     st.subheader("Loonkosten (SD Worx export)")
 
     LOONKOST_PAD = os.path.join(os.path.dirname(__file__), "data", "loonkost.xlsx")
@@ -698,7 +613,6 @@ with tab9:
         if looncode_col is None:
             raise ValueError(f"Kolom 'Looncode' niet gevonden. Beschikbare kolommen: {list(sdw.columns)}")
         unieke_codes = sdw[looncode_col].dropna().unique().tolist()
-        # Vergelijk numeriek (001.48 == 1.48) of als string
         sdw = sdw[sdw[looncode_col].apply(
             lambda v: str(v).strip().lstrip("0") == "1.48" or str(v).strip() == "001.48"
         )]
@@ -793,26 +707,15 @@ with tab9:
             df_jaar_filter = df["maand"].str[:4].isin(gekozen_jaren)
             omzet_seg = df[masker & df_jaar_filter].copy()
             omzet_seg["Periode"] = omzet_seg["maand"].apply(lambda m: _naar_periode(m, granulariteit))
-            omzet_seg = (
-                omzet_seg.groupby("Periode")["omzet"].sum()
-                .reset_index()
-                .rename(columns={"omzet": "Omzet (€)"})
-            )
+            omzet_seg = omzet_seg.groupby("Periode")["omzet"].sum().reset_index().rename(columns={"omzet": "Omzet (€)"})
 
             loon_jaar_filter = lonen_bank_df["maand"].str[:4].isin(gekozen_jaren)
-            loon_gefilterd = lonen_bank_df[
-                lonen_bank_df["partner_name"].isin(gekozen_medewerkers) & loon_jaar_filter
-            ].copy()
+            loon_gefilterd = lonen_bank_df[lonen_bank_df["partner_name"].isin(gekozen_medewerkers) & loon_jaar_filter].copy()
             loon_gefilterd["Periode"] = loon_gefilterd["maand"].apply(lambda m: _naar_periode(m, granulariteit))
-            loon_seg = (
-                loon_gefilterd.groupby("Periode")["bedrag"].sum()
-                .reset_index()
-                .rename(columns={"bedrag": "Personeelskost (€)"})
-            )
+            loon_seg = loon_gefilterd.groupby("Periode")["bedrag"].sum().reset_index().rename(columns={"bedrag": "Personeelskost (€)"})
 
             vergelijk = omzet_seg.merge(loon_seg, on="Periode", how="outer").fillna(0).sort_values("Periode")
             vergelijk["Marge (€)"] = vergelijk["Omzet (€)"] - vergelijk["Personeelskost (€)"]
-
             totaal_omzet = vergelijk["Omzet (€)"].sum()
             totaal_kost = vergelijk["Personeelskost (€)"].sum()
             totaal_marge = vergelijk["Marge (€)"].sum()
@@ -833,17 +736,10 @@ with tab9:
                 use_container_width=True,
             )
 
-            vergelijk["Kost/Omzet (%)"] = vergelijk.apply(
-                lambda r: r["Personeelskost (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] else 0, axis=1
-            )
-            vergelijk["Rendabiliteit (%)"] = vergelijk.apply(
-                lambda r: r["Marge (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] else 0, axis=1
-            )
+            vergelijk["Kost/Omzet (%)"] = vergelijk.apply(lambda r: r["Personeelskost (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] else 0, axis=1)
+            vergelijk["Rendabiliteit (%)"] = vergelijk.apply(lambda r: r["Marge (€)"] / r["Omzet (€)"] * 100 if r["Omzet (€)"] else 0, axis=1)
             st.dataframe(
-                vergelijk.style.format({
-                    "Omzet (€)": "€ {:,.0f}", "Personeelskost (€)": "€ {:,.0f}",
-                    "Marge (€)": "€ {:,.0f}", "Kost/Omzet (%)": "{:.1f}%", "Rendabiliteit (%)": "{:.1f}%",
-                }),
+                vergelijk.style.format({"Omzet (€)": "€ {:,.0f}", "Personeelskost (€)": "€ {:,.0f}", "Marge (€)": "€ {:,.0f}", "Kost/Omzet (%)": "{:.1f}%", "Rendabiliteit (%)": "{:.1f}%"}),
                 use_container_width=True, hide_index=True,
             )
         else:
@@ -851,32 +747,108 @@ with tab9:
 
         st.divider()
         with st.expander("Totaal per maand"):
-            maand_df = (
-                lonen_bank_df.groupby("maand")
-                .agg(
-                    totaal=("bedrag", "sum"),
-                    werknemers=("partner_name", lambda x: ", ".join(sorted(x.dropna().unique())))
-                )
-                .reset_index()
-                .sort_values("maand")
-                .rename(columns={"maand": "Maand", "totaal": "Totaal (€)", "werknemers": "Werknemers"})
-            )
-            st.dataframe(maand_df.style.format({"Totaal (€)": "€ {:,.0f}"}), use_container_width=True, hide_index=True)
+            maand_ovz = lonen_bank_df.groupby("maand").agg(totaal=("bedrag", "sum"), werknemers=("partner_name", lambda x: ", ".join(sorted(x.dropna().unique())))).reset_index().sort_values("maand").rename(columns={"maand": "Maand", "totaal": "Totaal (€)", "werknemers": "Werknemers"})
+            st.dataframe(maand_ovz.style.format({"Totaal (€)": "€ {:,.0f}"}), use_container_width=True, hide_index=True)
 
         with st.expander("Totaal per functie per maand"):
-            functie_df = (
-                lonen_bank_df.groupby(["functie", "maand"])["bedrag"]
-                .sum().reset_index()
-                .pivot(index="functie", columns="maand", values="bedrag").fillna(0)
-            )
-            functie_df["Totaal"] = functie_df.sum(axis=1)
-            st.dataframe(functie_df.sort_values("Totaal", ascending=False).style.format("€ {:,.0f}"), use_container_width=True)
+            fovz = lonen_bank_df.groupby(["functie", "maand"])["bedrag"].sum().reset_index().pivot(index="functie", columns="maand", values="bedrag").fillna(0)
+            fovz["Totaal"] = fovz.sum(axis=1)
+            st.dataframe(fovz.sort_values("Totaal", ascending=False).style.format("€ {:,.0f}"), use_container_width=True)
 
         with st.expander("Detail per werknemer"):
             st.dataframe(
                 lonen_bank_df.rename(columns={"maand": "Maand", "partner_name": "Werknemer", "functie": "Functie", "bedrag": "Bedrag (€)"})
-                .sort_values(["Maand", "Functie", "Werknemer"])
+                .sort_values(["Maand", "Functie", "Werknemer"]).style.format({"Bedrag (€)": "€ {:,.0f}"}),
+                use_container_width=True, hide_index=True,
+            )
+
+    # ── Odoo personeelskosten ───────────────────────────────────────────────
+    st.divider()
+    st.subheader("Personeelskosten uit Odoo")
+    st.caption("Overzicht via rekening 'Te betalen Lonen'")
+
+    loon_raw = laad_personeelskosten()
+    if loon_raw:
+        loon_df = pd.DataFrame(loon_raw)
+        loon_df["date"] = pd.to_datetime(loon_df["date"])
+        loon_df["jaar"] = loon_df["date"].dt.year
+        loon_df["maand"] = loon_df["date"].dt.to_period("M").astype(str)
+        loon_df["name"] = loon_df["name"].apply(lambda x: x if isinstance(x, str) else "")
+        loon_df["partner"] = loon_df["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
+        loon_df["rekening"] = loon_df["account_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
+        loon_df["type"] = loon_df["rekening"].apply(
+            lambda r: "Bezoldigingen vennoten" if "bezoldiging" in r.lower() else "Lonen personeel"
+        )
+
+        huidig_jaar = pd.Timestamp.now().year
+        totaal = loon_df["debit"].sum()
+        lonen = loon_df[loon_df["type"] == "Lonen personeel"]["debit"].sum()
+        bezoldigingen = loon_df[loon_df["type"] == "Bezoldigingen vennoten"]["debit"].sum()
+        huidig_jaar_totaal = loon_df[loon_df["jaar"] == huidig_jaar]["debit"].sum()
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Totaal personeelskosten", f"€ {totaal:,.0f}")
+        c2.metric(f"Totaal {huidig_jaar}", f"€ {huidig_jaar_totaal:,.0f}")
+        c3.metric("Lonen personeel", f"€ {lonen:,.0f}")
+        c4.metric("Bezoldigingen vennoten", f"€ {bezoldigingen:,.0f}")
+
+        st.divider()
+
+        kost_per_jaar = (
+            loon_df.groupby(["jaar", "type"])["debit"].sum().reset_index()
+            .rename(columns={"jaar": "Jaar", "type": "Type", "debit": "Bedrag (€)"})
+        )
+        kost_per_jaar["Jaar"] = kost_per_jaar["Jaar"].astype(str)
+        st.plotly_chart(
+            px.bar(kost_per_jaar, x="Jaar", y="Bedrag (€)", color="Type", barmode="group",
+                   text_auto=".3s", title="Personeelskosten per jaar"
+                   ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+            use_container_width=True,
+        )
+
+        with st.expander("Detail boekingen"):
+            st.dataframe(
+                loon_df[["date", "maand", "type", "partner", "name", "debit", "rekening"]]
+                .rename(columns={"date": "Datum", "maand": "Maand", "type": "Type", "partner": "Tegenpartij",
+                                 "name": "Omschrijving", "debit": "Bedrag (€)", "rekening": "Rekening"})
+                .sort_values("Datum", ascending=False)
                 .style.format({"Bedrag (€)": "€ {:,.0f}"}),
                 use_container_width=True, hide_index=True,
             )
+    else:
+        st.info("Geen boekingen gevonden op 'Te betalen Lonen' of 'Te betalen Bezoldigingen'. Controleer de rekeningnamen in Odoo.")
+
+    st.divider()
+    werknemers_raw = laad_werknemers()
+
+    if not werknemers_raw:
+        st.warning("Geen werknemers gevonden. Controleer of de HR-module actief is in Odoo.")
+    else:
+        wdf = pd.DataFrame(werknemers_raw)
+        wdf["functie"] = wdf["job_id"].apply(lambda x: x[1] if isinstance(x, list) else (x or ""))
+        wdf["afdeling"] = wdf["department_id"].apply(lambda x: x[1] if isinstance(x, list) else (x or ""))
+        wdf["functietitel"] = wdf["job_title"].apply(lambda x: x if isinstance(x, str) else "")
+        wdf = wdf[["name", "functie", "functietitel", "afdeling"]].rename(columns={
+            "name": "Werknemer", "functie": "Functie", "functietitel": "Functietitel", "afdeling": "Afdeling"
+        })
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Aantal werknemers", len(wdf))
+        col2.metric("Aantal functies", wdf["Functie"].nunique())
+        col3.metric("Aantal afdelingen", wdf["Afdeling"].nunique())
+
+        st.divider()
+
+        filter_afd = st.selectbox("Filter op afdeling", options=["Alle"] + sorted(wdf["Afdeling"].unique().tolist()))
+        weergave = wdf if filter_afd == "Alle" else wdf[wdf["Afdeling"] == filter_afd]
+        st.dataframe(weergave.sort_values(["Afdeling", "Functie", "Werknemer"]), use_container_width=True, hide_index=True)
+
+        with st.expander("Werknemers per afdeling"):
+            st.dataframe(
+                wdf.groupby("Afdeling").agg(werknemers=("Werknemer", "count")).reset_index()
+                .rename(columns={"werknemers": "Werknemers"})
+                .sort_values("Werknemers", ascending=False),
+                use_container_width=True, hide_index=True,
+            )
+
 
