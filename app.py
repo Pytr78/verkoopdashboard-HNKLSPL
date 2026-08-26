@@ -570,6 +570,7 @@ with tab9:
         loon_df["date"] = pd.to_datetime(loon_df["date"])
         loon_df["jaar"] = loon_df["date"].dt.year
         loon_df["maand"] = loon_df["date"].dt.to_period("M").astype(str)
+        loon_df["name"] = loon_df["name"].apply(lambda x: x if isinstance(x, str) else "")
         loon_df["partner"] = loon_df["partner_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
         loon_df["rekening"] = loon_df["account_id"].apply(lambda x: x[1] if isinstance(x, list) else "")
         loon_df["type"] = loon_df["rekening"].apply(
