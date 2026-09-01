@@ -568,6 +568,7 @@ with tab9:
             st.caption("Het bestand wordt opgeslagen en automatisch geladen bij elk volgend bezoek.")
             geupload = st.file_uploader(f"{label} (.xlsx)", type=["xlsx"], key=key)
             if geupload:
+                os.makedirs(os.path.dirname(pad), exist_ok=True)
                 with open(pad, "wb") as f:
                     f.write(geupload.read())
                 st.success("Bestand opgeslagen.")
