@@ -6,7 +6,7 @@ import io
 import plotly.express as px
 from src.odoo_client import fetch_invoices, fetch_partner_info, fetch_betaalde_facturen, fetch_employees, fetch_personeelskosten, fetch_lonen_bankafschriften, fetch_leveranciersfacturen, fetch_omzet_eigen_productie
 from src.data_processing import invoices_to_dataframe, omzet_per_partner_per_maand, omzet_per_partner_totaal
-from src.charts import lijndiagram, staafdiagram
+from src.charts import lijndiagram, staafdiagram, _stijl, PLOTLY_KLEUREN
 from src.management_summary import bereken_samenvatting
 from src.rfm import bereken_rfm, SEGMENTEN
 from src.doelstellingen import laad_doelstellingen, sla_doelstellingen_op
@@ -406,15 +406,16 @@ with tab7:
         col4.metric("Verwacht binnen 90 dagen", f"€ {binnen_90:,.0f}")
 
         st.plotly_chart(
-            px.bar(
+            _stijl(px.bar(
                 periode_df,
                 x="periode",
                 y="verwacht_bedrag",
                 labels={"periode": "Periode", "verwacht_bedrag": "Verwacht bedrag (€)"},
                 title="Verwachte cashflow per periode",
                 color="periode",
-                color_discrete_sequence=["#2ecc71", "#3498db", "#e67e22", "#e74c3c"],
-            ).update_layout(showlegend=False).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+                color_discrete_sequence=PLOTLY_KLEUREN,
+                text_auto=".3s",
+            ).update_layout(showlegend=False).update_yaxes(tickprefix="€ ", tickformat=",.0f")),
             use_container_width=True,
         )
 
@@ -496,7 +497,7 @@ with tab8:
         st.divider()
 
         st.plotly_chart(
-            px.bar(
+            _stijl(px.bar(
                 omzet_per_label,
                 x="label",
                 y="omzet",
@@ -504,7 +505,8 @@ with tab8:
                 labels={"label": "Label", "omzet": "Omzet (€)"},
                 title="Omzet per klantengroep (totaal)",
                 color="label",
-            ).update_layout(showlegend=False).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+                color_discrete_sequence=PLOTLY_KLEUREN,
+            ).update_layout(showlegend=False).update_yaxes(tickprefix="€ ", tickformat=",.0f")),
             use_container_width=True,
         )
 
@@ -519,7 +521,7 @@ with tab8:
             )
             omzet_per_label_jaar["jaar"] = omzet_per_label_jaar["jaar"].astype(str)
             st.plotly_chart(
-                px.bar(
+                _stijl(px.bar(
                     omzet_per_label_jaar,
                     x="jaar",
                     y="omzet",
@@ -528,7 +530,8 @@ with tab8:
                     text_auto=".3s",
                     labels={"jaar": "Jaar", "omzet": "Omzet (€)", "label": "Label"},
                     title="Omzet per label per jaar",
-                ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+                    color_discrete_sequence=PLOTLY_KLEUREN,
+                ).update_yaxes(tickprefix="€ ", tickformat=",.0f")),
                 use_container_width=True,
             )
             with st.expander("Tabel omzet per label per jaar"):
@@ -545,7 +548,7 @@ with tab8:
                 .sort_values(["maand", "label"])
             )
             st.plotly_chart(
-                px.line(
+                _stijl(px.line(
                     omzet_per_label_maand,
                     x="maand",
                     y="omzet",
@@ -553,7 +556,8 @@ with tab8:
                     markers=True,
                     labels={"maand": "Maand", "omzet": "Omzet (€)", "label": "Label"},
                     title="Omzet per label per maand",
-                ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+                    color_discrete_sequence=PLOTLY_KLEUREN,
+                ).update_yaxes(tickprefix="€ ", tickformat=",.0f")),
                 use_container_width=True,
             )
             with st.expander("Tabel omzet per label per maand"):
@@ -790,12 +794,13 @@ with tab9:
             c4.metric("Rendabiliteit", f"{totaal_marge / totaal_omzet * 100:.1f}%" if totaal_omzet else "—")
 
             st.plotly_chart(
-                px.bar(
+                _stijl(px.bar(
                     vergelijk.melt(id_vars="Periode", value_vars=["Omzet (€)", "Personeelskost (€)", "Marge (€)"]),
                     x="Periode", y="value", color="variable", barmode="group",
                     labels={"value": "Bedrag (€)", "variable": ""},
                     title=f"Omzet [{', '.join(gekozen_labels)}] vs. loonkost [{', '.join(gekozen_medewerkers)}]",
-                ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+                    color_discrete_sequence=PLOTLY_KLEUREN,
+                ).update_yaxes(tickprefix="€ ", tickformat=",.0f")),
                 use_container_width=True,
             )
 
@@ -911,11 +916,13 @@ with tab10:
         st.subheader("Per hogere categorie")
         cat_df = ep_filtered.groupby(["Periode", "hogere_categorie"])["omzet"].sum().reset_index()
         st.plotly_chart(
-            px.bar(
+            _stijl(px.bar(
                 cat_df, x="Periode", y="omzet", color="hogere_categorie", barmode="stack",
                 labels={"omzet": "Omzet (€)", "hogere_categorie": "Categorie"},
                 title="Omzet eigen productie per hogere categorie",
-            ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+                color_discrete_sequence=PLOTLY_KLEUREN,
+                text_auto=".3s",
+            ).update_yaxes(tickprefix="€ ", tickformat=",.0f")),
             use_container_width=True,
         )
 
@@ -925,12 +932,13 @@ with tab10:
         st.subheader("Per merk")
         merk_df = ep_filtered.groupby(["Periode", "merk", "hogere_categorie"])["omzet"].sum().reset_index()
         st.plotly_chart(
-            px.bar(
+            _stijl(px.bar(
                 merk_df, x="Periode", y="omzet", color="merk", barmode="stack",
                 facet_row="hogere_categorie",
                 labels={"omzet": "Omzet (€)", "merk": "Merk", "hogere_categorie": ""},
                 title="Omzet per merk",
-            ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+                color_discrete_sequence=PLOTLY_KLEUREN,
+            ).update_yaxes(tickprefix="€ ", tickformat=",.0f")),
             use_container_width=True,
         )
 
@@ -981,12 +989,13 @@ with tab10:
                 r4.metric("Rendabiliteit", f"{tot_m / tot_o * 100:.1f}%" if tot_o else "—")
 
                 st.plotly_chart(
-                    px.bar(
+                    _stijl(px.bar(
                         vgl_ep.melt(id_vars="Periode", value_vars=["Omzet (€)", "Personeelskost (€)", "Marge (€)"]),
                         x="Periode", y="value", color="variable", barmode="group",
                         labels={"value": "Bedrag (€)", "variable": ""},
                         title=f"Eigen productie omzet vs. loonkost [{', '.join(gekozen_ep_mw)}]",
-                    ).update_yaxes(tickprefix="€ ", tickformat=",.0f"),
+                        color_discrete_sequence=PLOTLY_KLEUREN,
+                    ).update_yaxes(tickprefix="€ ", tickformat=",.0f")),
                     use_container_width=True,
                 )
 
